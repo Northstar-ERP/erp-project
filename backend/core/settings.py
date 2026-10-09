@@ -28,9 +28,18 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+<<<<<<< HEAD
 
     'rest_framework',
     'rest_framework_simplejwt',
+=======
+    'rest_framework',
+    'rest_framework_simplejwt',
+    'apps.users.apps.UsersConfig',
+    'apps.organization.apps.OrganizationConfig',
+    'apps.projects.apps.ProjectsConfig',
+    'apps.assets.apps.AssetsConfig',
+>>>>>>> 4a9917d1d5f09542637e4b6dc3d0cc7e77c81015
 
     'apps.users.apps.UsersConfig',
     'apps.organization.apps.OrganizationConfig',
@@ -82,11 +91,16 @@ DATABASES = {
         'NAME': os.environ.get('POSTGRES_DB'),
         'USER': os.environ.get('POSTGRES_USER'),
         'PASSWORD': os.environ.get('POSTGRES_PASSWORD'),
+<<<<<<< HEAD
         'HOST': os.environ.get('POSTGRES_HOST'),
         'PORT': os.environ.get('POSTGRES_PORT'),
         'OPTIONS': {
             'sslmode': 'require',
         },
+=======
+        'HOST': os.environ.get('POSTGRES_HOST'), # Connects to the forwarded port from Docker
+        'PORT': os.environ.get('POSTGRES_PORT'),
+>>>>>>> 4a9917d1d5f09542637e4b6dc3d0cc7e77c81015
     }
 }
 
