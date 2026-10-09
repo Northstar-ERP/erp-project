@@ -9,7 +9,7 @@ venv/
 .venv/
 .vscode/
 db.sqlite3
-
+frontend/
 # Logs
 *.log
 audit.log

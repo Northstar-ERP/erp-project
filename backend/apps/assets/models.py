@@ -102,6 +102,14 @@ class AssetHistory(models.Model):
         related_name='history'
     )
 
+    employee = models.ForeignKey(
+        'users.Employee',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='asset_history'
+    )
+
     event_type = models.CharField(
         max_length=100
     )
