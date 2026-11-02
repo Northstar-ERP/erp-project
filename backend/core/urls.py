@@ -12,4 +12,5 @@ urlpatterns = [
     path('api/assets/', include('apps.assets.urls')),
     path('api/leave/', include('apps.leave.urls')),
     path('api/expense/', include('apps.expense.urls')),
+    path('api/notifications/', include('apps.notifications.urls')),
 ]
