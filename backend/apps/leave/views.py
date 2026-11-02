@@ -6,6 +6,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from apps.notifications.services import leave_submitted
 
 from apps.utils.views import AuditModelViewSet
 from .models import LeaveType, LeavePolicy, LeaveRequest, LeaveBalance
@@ -82,6 +83,10 @@ class LeaveRequestViewSet(AuditModelViewSet):
             ) | queryset.filter(employee=employee)
 
         return queryset.filter(employee=employee)
+
+    def perform_create(self, serializer):                    
+        super().perform_create(serializer)
+        leave_submitted(serializer.instance, actor=self.request.user)
 
     @action(
         detail=True,
