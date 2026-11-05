@@ -31,9 +31,9 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'rest_framework_simplejwt',
+    'apps.users.apps.UsersConfig',  # Must come before utils due to AUTH_USER_MODEL dependency
     'apps.utils.apps.UtilsConfig',
     'corsheaders',
-    'apps.users.apps.UsersConfig',
     'apps.organization.apps.OrganizationConfig',
     'apps.projects.apps.ProjectsConfig',
     'apps.assets.apps.AssetsConfig',
@@ -116,15 +116,30 @@ AUTH_PASSWORD_VALIDATORS = [
 # Caching
 # https://docs.djangoproject.com/en/6.1/topics/cache/
 
+# Graceful Redis fallback - if Redis is unreachable, fall back to database
+DJANGO_REDIS_IGNORE_EXCEPTIONS = True
+
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": os.environ.get("REDIS_URL"),
+        "LOCATION": os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0"),
+        "KEY_PREFIX": "erp_v1",
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
-        }
+            "IGNORE_EXCEPTIONS": True,
+            "CONNECTION_POOL_KWARGS": {
+                "max_connections": 50,
+                "retry_on_timeout": True,
+            },
+            "SOCKET_CONNECT_TIMEOUT": 5,
+            "SOCKET_TIMEOUT": 5,
+        },
     }
 }
+
+# Session caching in Redis (optional, for performance)
+SESSION_ENGINE = "django.contrib.sessions.backends.cache"
+SESSION_CACHE_ALIAS = "default"
 
 # Internationalization
 # https://docs.djangoproject.com/en/6.1/topics/i18n/
@@ -159,6 +174,17 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+        'apps.utils.throttling.WriteBurstThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '20/minute',
+        'user': '120/minute',
+        'login': '5/minute',
+        'write_burst': '30/minute',
+    },
 }
 
 from datetime import timedelta

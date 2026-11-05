@@ -2,6 +2,7 @@ from django.db import transaction
 from rest_framework import permissions
 from apps.utils.permissions import IsProjectManager, IsSystemAdmin
 from apps.utils.views import AuditModelViewSet
+from apps.utils.throttling import WriteBurstThrottle
 from .models import Project, Task
 from .serializers import ProjectSerializer, TaskSerializer
 from django.shortcuts import get_object_or_404
@@ -122,6 +123,7 @@ class TaskPermission(permissions.BasePermission):
 class TaskViewSet(AuditModelViewSet):
     serializer_class = TaskSerializer
     permission_classes = [TaskPermission]
+    throttle_classes = [WriteBurstThrottle]
 
     def get_queryset(self):
         user = self.request.user
