@@ -15,12 +15,15 @@ load_dotenv(env_path)
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.environ.get('SECRET_KEY')
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# 1. DEBUG: Defaults to False in production unless explicitly set to True in .env
+DEBUG = os.environ.get("DEBUG", "False").strip().lower() in ("true", "1", "yes")
 
-ALLOWED_HOSTS = []
-
-
+# 2. ALLOWED_HOSTS: Split comma-separated domains from .env
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+    if host.strip()
+]
 # Application definition
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -54,10 +57,23 @@ MIDDLEWARE = [
 
 CORS_ALLOW_CREDENTIALS = True
 
-# Also ensure your localhost frontend origin is explicitly allowed:
+# 3. CORS_ALLOWED_ORIGINS: Split comma-separated frontend origins from .env
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
+    origin.strip()
+    for origin in os.environ.get(
+        "CORS_ALLOWED_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000"
+    ).split(",")
+]
+
+# Optional: Keep CSRF_TRUSTED_ORIGINS in sync with CORS for cookie/session requests
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get(
+        "CSRF_TRUSTED_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000"
+    ).split(",")
+    if origin.strip()
 ]
 
 ROOT_URLCONF = 'core.urls'
@@ -222,8 +238,3 @@ LOGGING = {
         },
     },
 }
-
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-]
