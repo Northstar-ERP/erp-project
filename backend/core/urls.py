@@ -11,7 +11,5 @@ urlpatterns = [
     path('api/leave/', include('apps.leave.urls')),
     path('api/expense/', include('apps.expense.urls')),
     path('api/attendance/', include('apps.attendance.urls')),
-    path('api/notifications/', include('apps.notifications.urls')),
-    
-    
+    path('api/notifications/', include('apps.notifications.urls')),    
 ]
