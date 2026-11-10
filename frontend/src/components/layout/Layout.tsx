@@ -9,6 +9,7 @@ import { Icon } from '../ui';
 
 const navigation = [
   { to: '/dashboard', label: 'Dashboard', icon: 'grid' as const },
+  { to: '/analytics', label: 'Analytics', icon: 'grid' as const },
   { to: '/organization', label: 'Organization', icon: 'building' as const },
   { to: '/projects', label: 'Projects & tasks', icon: 'briefcase' as const },
   { to: '/assets', label: 'Assets', icon: 'cube' as const },
@@ -70,7 +71,11 @@ export default function Layout() {
         <p className="mb-3 px-3 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Workspace</p>
         <nav className="space-y-1" aria-label="Primary navigation">
           {navigation
-            .filter(({ to }) => to === '/dashboard' || to === '/leave' || to === '/expenses' || hasRole(
+            .filter(({ to }) => to === '/dashboard' ||
+to === '/analytics' ||
+to === '/leave' ||
+to === '/expenses' ||
+hasRole(
               to === '/organization'
                 ? ['System Admin', 'HR Manager']
                 : to === '/projects'

@@ -25,6 +25,7 @@ ALLOWED_HOSTS = [
     if host.strip()
 ]
 # Application definition
+
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -40,11 +41,14 @@ INSTALLED_APPS = [
     'apps.organization.apps.OrganizationConfig',
     'apps.projects.apps.ProjectsConfig',
     'apps.assets.apps.AssetsConfig',
+    'apps.analytics.apps.AnalyticsConfig',
     'apps.leave.apps.LeaveConfig',
     'apps.expense.apps.ExpenseConfig',
     'apps.attendance.apps.AttendanceConfig',
     'apps.notifications.apps.NotificationsConfig',
+
 ]
+
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -57,6 +61,7 @@ MIDDLEWARE = [
     'core.middleware.AuditLoggingMiddleware',  # Custom middleware for audit logging
 ]
 
+<<<<<<< HEAD
 CORS_ALLOW_CREDENTIALS = True
 
 # 3. CORS_ALLOWED_ORIGINS: Split comma-separated frontend origins from .env
@@ -78,6 +83,8 @@ CSRF_TRUSTED_ORIGINS = [
     if origin.strip()
 ]
 
+=======
+>>>>>>> origin/feature/erp-analytics
 ROOT_URLCONF = 'core.urls'
 
 TEMPLATES = [
@@ -239,4 +246,14 @@ LOGGING = {
             'propagate': False,
         },
     },
+<<<<<<< HEAD
 }
+=======
+}
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+CORS_ALLOW_CREDENTIALS = True
+>>>>>>> origin/feature/erp-analytics
