@@ -42,8 +42,8 @@ INSTALLED_APPS = [
     'apps.assets.apps.AssetsConfig',
     'apps.leave.apps.LeaveConfig',
     'apps.expense.apps.ExpenseConfig',
-    "apps.attendance.apps.AttendanceConfig",
-
+    'apps.attendance.apps.AttendanceConfig',
+    'apps.notifications.apps.NotificationsConfig',
 ]
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',

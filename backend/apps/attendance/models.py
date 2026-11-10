@@ -3,7 +3,7 @@ from django.conf import settings
 from django.db import models
 from django.db.models import Q
 
-from users.models import Employee
+from apps.users.models import Employee
 
 
 class AttendanceRecord(models.Model):

@@ -1,7 +1,7 @@
 
 from rest_framework.permissions import BasePermission
 
-from users.models import Employee
+from apps.users.models import Employee
 
 
 def get_employee(user):
