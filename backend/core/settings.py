@@ -111,7 +111,8 @@ DATABASES = {
         'USER': os.environ.get('POSTGRES_USER'),
         'PASSWORD': os.environ.get('POSTGRES_PASSWORD'),
         'HOST': os.environ.get('POSTGRES_HOST'), # Connects to the forwarded port from Docker
-        'PORT': os.environ.get('POSTGRES_PORT'),
+        'PORT': os.environ.get('POSTGRES_PORT','5432'),
+        'CONN_MAX_AGE': 60,
     }
 }
 
@@ -177,7 +178,8 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.1/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 
 # Email
