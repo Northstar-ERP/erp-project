@@ -129,6 +129,8 @@ class ProjectTaskApiTests(APITestCase):
                 'job_title',
                 'role_name',
                 'department_name',
+                'branch_name',
+                'company_name',
             },
         )
 

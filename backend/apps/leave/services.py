@@ -43,7 +43,7 @@ def can_review_leave(user, leave_request):
 @transaction.atomic
 def approve_leave(leave_request, reviewer, comment=""):
     leave_request = (
-        LeaveRequest.objects.select_for_update()
+        LeaveRequest.objects.select_for_update(of=("self",))
         .select_related(
             "employee__department__branch__company",
             "leave_type",

@@ -295,7 +295,38 @@ class Command(BaseCommand):
         for username, employee in employees.items():
             if username != "manager":
                 employee.manager = manager
+                employee.full_clean()
                 employee.save(update_fields=["manager", "updated_at"])
+
+        # Assign branch managers (each branch manager must work in that branch)
+        branches[0].manager = employees["manager"]
+        branches[0].full_clean()
+        branches[0].save(update_fields=["manager", "updated_at"])
+
+        branches[1].manager = employees["employee2"]
+        branches[1].full_clean()
+        branches[1].save(update_fields=["manager", "updated_at"])
+
+        branches[2].manager = employees["finance_employee"]
+        branches[2].full_clean()
+        branches[2].save(update_fields=["manager", "updated_at"])
+
+        # Assign department heads (each department head must belong to that department)
+        departments["Engineering"].head = employees["manager"]
+        departments["Engineering"].full_clean()
+        departments["Engineering"].save(update_fields=["head", "updated_at"])
+
+        departments["People Operations"].head = employees["hr_manager"]
+        departments["People Operations"].full_clean()
+        departments["People Operations"].save(update_fields=["head", "updated_at"])
+
+        departments["Product"].head = employees["employee2"]
+        departments["Product"].full_clean()
+        departments["Product"].save(update_fields=["head", "updated_at"])
+
+        departments["Finance"].head = employees["finance_employee"]
+        departments["Finance"].full_clean()
+        departments["Finance"].save(update_fields=["head", "updated_at"])
 
         project_platform = Project.objects.create(
             name="Northstar Customer Platform Modernization",
