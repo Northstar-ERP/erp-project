@@ -2,6 +2,8 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import Layout from './components/layout/Layout';
 import { AuthProvider } from './context/AuthContext';
 import AssetsPage from './pages/AssetsPage';
+// @ts-expect-error AnalyticsPage is implemented in JavaScript and has no declaration file.
+import AnalyticsPage from './pages/AnalyticsPage';
 import DashboardPage from './pages/DashboardPage';
 import ExpensesPage from './pages/ExpensesPage';
 import LeavePage from './pages/LeavePage';
@@ -19,6 +21,7 @@ export default function App() {
           <Route element={<ProtectedRoute />}>
             <Route element={<Layout />}>
               <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/analytics" element={<AnalyticsPage />} />
               <Route path="/organization" element={<RoleRoute roles={['System Admin', 'HR Manager']}><OrganizationPage /></RoleRoute>} />
               <Route path="/projects" element={<RoleRoute roles={['System Admin', 'HR Manager', 'Department / Project Manager']}><ProjectsPage /></RoleRoute>} />
               <Route path="/assets" element={<RoleRoute roles={['System Admin', 'HR Manager', 'Department / Project Manager', 'Employee', 'IT']}><AssetsPage /></RoleRoute>} />

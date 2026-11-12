@@ -15,13 +15,17 @@ load_dotenv(env_path)
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.environ.get('SECRET_KEY')
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# 1. DEBUG: Defaults to False in production unless explicitly set to True in .env
+DEBUG = os.environ.get("DEBUG", "False").strip().lower() in ("true", "1", "yes")
 
-ALLOWED_HOSTS = []
-
-
+# 2. ALLOWED_HOSTS: Split comma-separated domains from .env
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+    if host.strip()
+]
 # Application definition
+
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -31,15 +35,19 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'rest_framework_simplejwt',
+    'apps.users.apps.UsersConfig',  # Must come before utils due to AUTH_USER_MODEL dependency
     'apps.utils.apps.UtilsConfig',
     'corsheaders',
-    'apps.users.apps.UsersConfig',
     'apps.organization.apps.OrganizationConfig',
     'apps.projects.apps.ProjectsConfig',
     'apps.assets.apps.AssetsConfig',
+    'apps.analytics.apps.AnalyticsConfig',
     'apps.leave.apps.LeaveConfig',
     'apps.expense.apps.ExpenseConfig',
+    'apps.attendance.apps.AttendanceConfig',
+    'apps.notifications.apps.NotificationsConfig',
 ]
+
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -54,10 +62,23 @@ MIDDLEWARE = [
 
 CORS_ALLOW_CREDENTIALS = True
 
-# Also ensure your localhost frontend origin is explicitly allowed:
+# 3. CORS_ALLOWED_ORIGINS: Split comma-separated frontend origins from .env
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
+    origin.strip()
+    for origin in os.environ.get(
+        "CORS_ALLOWED_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000"
+    ).split(",")
+]
+
+# Optional: Keep CSRF_TRUSTED_ORIGINS in sync with CORS for cookie/session requests
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get(
+        "CSRF_TRUSTED_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000"
+    ).split(",")
+    if origin.strip()
 ]
 
 ROOT_URLCONF = 'core.urls'
@@ -90,7 +111,8 @@ DATABASES = {
         'USER': os.environ.get('POSTGRES_USER'),
         'PASSWORD': os.environ.get('POSTGRES_PASSWORD'),
         'HOST': os.environ.get('POSTGRES_HOST'), # Connects to the forwarded port from Docker
-        'PORT': os.environ.get('POSTGRES_PORT'),
+        'PORT': os.environ.get('POSTGRES_PORT','5432'),
+        'CONN_MAX_AGE': 60,
     }
 }
 
@@ -116,15 +138,30 @@ AUTH_PASSWORD_VALIDATORS = [
 # Caching
 # https://docs.djangoproject.com/en/6.1/topics/cache/
 
+# Graceful Redis fallback - if Redis is unreachable, fall back to database
+DJANGO_REDIS_IGNORE_EXCEPTIONS = True
+
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": os.environ.get("REDIS_URL"),
+        "LOCATION": os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0"),
+        "KEY_PREFIX": "erp_v1",
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
-        }
+            "IGNORE_EXCEPTIONS": True,
+            "CONNECTION_POOL_KWARGS": {
+                "max_connections": 50,
+                "retry_on_timeout": True,
+            },
+            "SOCKET_CONNECT_TIMEOUT": 5,
+            "SOCKET_TIMEOUT": 5,
+        },
     }
 }
+
+# Session caching in Redis (optional, for performance)
+SESSION_ENGINE = "django.contrib.sessions.backends.cache"
+SESSION_CACHE_ALIAS = "default"
 
 # Internationalization
 # https://docs.djangoproject.com/en/6.1/topics/i18n/
@@ -141,7 +178,8 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.1/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 
 # Email
@@ -159,6 +197,17 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+        'apps.utils.throttling.WriteBurstThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '20/minute',
+        'user': '120/minute',
+        'login': '5/minute',
+        'write_burst': '30/minute',
+    },
 }
 
 from datetime import timedelta
@@ -196,8 +245,3 @@ LOGGING = {
         },
     },
 }
-
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-]

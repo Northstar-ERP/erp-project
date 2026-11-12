@@ -2,6 +2,12 @@ from django.db import transaction
 from rest_framework import permissions
 from apps.utils.permissions import IsProjectManager, IsSystemAdmin
 from apps.utils.views import AuditModelViewSet
+from apps.utils.throttling import WriteBurstThrottle
+from apps.notifications.services import (                   
+    task_assigned,
+    task_status_changed,
+    project_status_changed,
+)
 from .models import Project, Task
 from .serializers import ProjectSerializer, TaskSerializer
 from django.shortcuts import get_object_or_404
@@ -53,6 +59,13 @@ class ProjectViewSet(AuditModelViewSet):
         else:
             permission_classes = [permissions.IsAuthenticated]
         return [p() for p in permission_classes]
+
+    def perform_update(self, serializer):                     
+        old_status = serializer.instance.status
+        super().perform_update(serializer)
+        project = serializer.instance
+        if project.status != old_status:
+            project_status_changed(project, old_status, actor=self.request.user)
 
     @action(detail=False, methods=['get'])
     def trash(self, request):
@@ -122,6 +135,7 @@ class TaskPermission(permissions.BasePermission):
 class TaskViewSet(AuditModelViewSet):
     serializer_class = TaskSerializer
     permission_classes = [TaskPermission]
+    throttle_classes = [WriteBurstThrottle]
 
     def get_queryset(self):
         user = self.request.user
@@ -148,3 +162,19 @@ class TaskViewSet(AuditModelViewSet):
             return queryset.filter(assigned_to=user.employee_profile)
 
         return queryset.none()
+
+    def perform_create(self, serializer):                     
+        super().perform_create(serializer)
+        task = serializer.instance
+        if task.assigned_to_id:
+            task_assigned(task, actor=self.request.user)
+
+    def perform_update(self, serializer):
+        old_assignee = serializer.instance.assigned_to_id   
+        old_status = serializer.instance.status
+        super().perform_update(serializer)
+        task = serializer.instance
+        if task.assigned_to_id and task.assigned_to_id != old_assignee:
+            task_assigned(task, actor=self.request.user)
+        if task.status != old_status:
+            task_status_changed(task, old_status, actor=self.request.user)
