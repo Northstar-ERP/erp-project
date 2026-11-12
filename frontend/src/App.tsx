@@ -3,6 +3,8 @@ import Layout from './components/layout/Layout';
 import { AuthProvider } from './context/AuthContext';
 import AssetsPage from './pages/AssetsPage';
 import AttendancePage from './pages/AttendancePage';
+// @ts-expect-error AnalyticsPage is implemented in JavaScript and has no declaration file.
+import AnalyticsPage from './pages/AnalyticsPage';
 import DashboardPage from './pages/DashboardPage';
 import ExpensesPage from './pages/ExpensesPage';
 import LeavePage from './pages/LeavePage';
@@ -32,6 +34,7 @@ export default function App() {
           <Route element={<ProtectedRoute />}>
             <Route element={<Layout />}>
               <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/analytics" element={<AnalyticsPage />} />
 
               {/* Dedicated Admin Management Routes */}
               <Route

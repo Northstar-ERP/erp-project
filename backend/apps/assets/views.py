@@ -7,6 +7,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from apps.utils.views import AuditModelViewSet
+from apps.utils.throttling import WriteBurstThrottle
 from .models import Asset, AssetAllocation, AssetHistory
 from .serializers import (
     AssetSerializer,
@@ -123,6 +124,7 @@ class AssetAllocationViewSet(AuditModelViewSet):
 
     serializer_class = AssetAllocationSerializer
     permission_classes = [AssetPermission]
+    throttle_classes = [WriteBurstThrottle]
 
     def get_queryset(self):
         queryset = super().get_queryset()

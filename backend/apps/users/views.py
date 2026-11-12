@@ -7,7 +7,8 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
-
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from apps.utils.throttling import LoginRateThrottle
 from .models import Role, User, Employee
 from .serializers import (
     RoleSerializer,
@@ -24,19 +25,34 @@ from apps.utils.permissions import (
     IsSystemAdminOrHRManager,
 )
 from apps.utils.views import AuditModelViewSet
+from apps.utils.cache import CacheableModelMixin, MASTER_DATA_TTL
 
 logger = logging.getLogger(__name__)
 
 
-class RoleViewSet(AuditModelViewSet):
+class LoginThrottledView(TokenObtainPairView):
+    """Token obtain endpoint with strict login rate limiting."""
+    throttle_classes = [LoginRateThrottle]
+
+
+class RefreshThrottledView(TokenRefreshView):
+    """Token refresh endpoint with strict login rate limiting."""
+    throttle_classes = [LoginRateThrottle]
+
+
+class RoleViewSet(CacheableModelMixin, AuditModelViewSet):
     queryset = Role.objects.select_related('created_by').all()
     serializer_class = RoleSerializer
     permission_classes = [IsSystemAdmin]
+    cache_ttl = MASTER_DATA_TTL
+    cache_actions = ['list', 'retrieve']
 
 
-class UserViewSet(AuditModelViewSet):
+class UserViewSet(CacheableModelMixin, AuditModelViewSet):
     queryset = User.objects.select_related('role', 'created_by').all()
     serializer_class = UserSerializer
+    cache_ttl = MASTER_DATA_TTL
+    cache_actions = ['list', 'retrieve']
 
     def get_permissions(self):
         if self.action == 'create':

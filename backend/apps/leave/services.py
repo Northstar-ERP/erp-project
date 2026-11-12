@@ -2,6 +2,7 @@
 from django.db import transaction
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
+from apps.notifications.services import leave_reviewed
 
 from .models import LeaveBalance, LeavePolicy, LeaveRequest
 from .permissions import (
@@ -134,7 +135,7 @@ def approve_leave(leave_request, reviewer, comment=""):
             "reviewed_at",
         ]
     )
-
+    leave_reviewed(leave_request, reviewer, approved=True)
     return leave_request
 
 
@@ -172,5 +173,5 @@ def reject_leave(leave_request, reviewer, comment=""):
             "reviewed_at",
         ]
     )
-
+    leave_reviewed(leave_request, reviewer, approved=False)
     return leave_request

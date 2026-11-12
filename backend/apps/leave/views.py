@@ -6,8 +6,11 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from apps.notifications.services import leave_submitted
 
 from apps.utils.views import AuditModelViewSet
+from apps.utils.cache import CacheableModelMixin, MASTER_DATA_TTL
+from apps.utils.throttling import WriteBurstThrottle
 from .models import LeaveType, LeavePolicy, LeaveRequest, LeaveBalance
 from .serializers import (
     LeaveTypeSerializer,
@@ -26,15 +29,19 @@ from .permissions import (
 from .services import approve_leave, reject_leave
 
 
-class LeaveTypeViewSet(AuditModelViewSet):
+class LeaveTypeViewSet(CacheableModelMixin, AuditModelViewSet):
     queryset = LeaveType.objects.select_related("created_by").all()
     serializer_class = LeaveTypeSerializer
     permission_classes = [IsHRAdminOrReadOnly]
+    cache_ttl = MASTER_DATA_TTL
+    cache_actions = ['list', 'retrieve']
 
 
-class LeavePolicyViewSet(AuditModelViewSet):
+class LeavePolicyViewSet(CacheableModelMixin, AuditModelViewSet):
     serializer_class = LeavePolicySerializer
     permission_classes = [IsHRAdminOrReadOnly]
+    cache_ttl = MASTER_DATA_TTL
+    cache_actions = ['list', 'retrieve']
 
     def get_queryset(self):
         queryset = LeavePolicy.objects.select_related(
@@ -57,6 +64,7 @@ class LeaveRequestViewSet(AuditModelViewSet):
     serializer_class = LeaveRequestSerializer
     permission_classes = [IsAuthenticated]
     http_method_names = ["get", "post", "head", "options"]
+    throttle_classes = [WriteBurstThrottle]
 
     def get_queryset(self):
         queryset = LeaveRequest.objects.select_related(
@@ -82,6 +90,10 @@ class LeaveRequestViewSet(AuditModelViewSet):
             ) | queryset.filter(employee=employee)
 
         return queryset.filter(employee=employee)
+
+    def perform_create(self, serializer):                    
+        super().perform_create(serializer)
+        leave_submitted(serializer.instance, actor=self.request.user)
 
     @action(
         detail=True,

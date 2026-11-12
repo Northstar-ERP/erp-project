@@ -24,6 +24,7 @@ const adminNavGroups: NavGroup[] = [
     group: 'Overview',
     items: [
       { to: '/dashboard', label: 'Dashboard', icon: 'grid' },
+      { to: '/analytics', label: 'Analytics', icon: 'grid' },
     ],
   },
   {

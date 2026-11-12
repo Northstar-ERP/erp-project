@@ -24,6 +24,7 @@ export function unwrapList<T>(response: ApiListResponse<T> | undefined): T[] {
 }
 
 export const endpoints = {
+  analytics: 'analytics/summary/',
   login: 'users/auth/token/',
   refresh: 'users/auth/token/refresh/',
   profile: 'users/employees/me/',
@@ -48,6 +49,9 @@ export const endpoints = {
 };
 
 export const client = {
+  // Analytics
+  analytics: () => api.get(endpoints.analytics),
+
   // Users & Roles
   users: () => api.get<ApiListResponse<UserAccount>>(endpoints.users),
   createUser: (data: Record<string, unknown>) =>
