@@ -166,6 +166,24 @@ def leave_reviewed(leave_request, reviewer, approved):
 
 
 # --------------------------------------------------------------------------
+# Performance
+# --------------------------------------------------------------------------
+@_safe
+def performance_scorecard_submitted(scorecard, actor=None):
+    """Tell the employee their performance review was submitted."""
+    return notify(
+        user_of(scorecard.employee),
+        Type.SYSTEM,
+        'Performance review submitted',
+        f'Your performance review for {scorecard.cycle.period_label} has been submitted.',
+        link='/performance',
+        related_public_id=scorecard.public_id,
+        actor=actor,
+        dedupe_key=f'performance-submitted:{scorecard.public_id}',
+    )
+
+
+# --------------------------------------------------------------------------
 # Projects and tasks
 # --------------------------------------------------------------------------
 @_safe

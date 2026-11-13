@@ -5,11 +5,13 @@ import { displayError } from '../components/format';
 import { OrgHierarchySelect } from '../components/OrgHierarchySelect';
 import { useAuth } from '../context/auth';
 import {
+  buildOrgChain,
   deriveHierarchyForEmployee,
   getEmployeeRoleName,
   isEmployeeManager,
   isRoleManager,
   type HierarchySelection,
+  type OrgChartNode,
 } from '../utils/managers';
 import {
   Button,
@@ -47,6 +49,7 @@ export default function ManagersPage() {
   // Modals
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [editManager, setEditManager] = useState<Employee | null>(null);
+  const [orgChartFor, setOrgChartFor] = useState<Employee | null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
 
@@ -69,6 +72,8 @@ export default function ManagersPage() {
   const [editReportsTo, setEditReportsTo] = useState('');
   const [editMakeBranchManager, setEditMakeBranchManager] = useState(false);
   const [editMakeDepartmentHead, setEditMakeDepartmentHead] = useState(false);
+  const [editEmploymentStatus, setEditEmploymentStatus] = useState('');
+  const [editResignationDate, setEditResignationDate] = useState('');
 
   // Search & Filter
   const [search, setSearch] = useState('');
@@ -198,6 +203,11 @@ export default function ManagersPage() {
     getEmployeeBranchId,
   ]);
 
+  const orgChain = useMemo(() => {
+    if (!orgChartFor) return null;
+    return buildOrgChain(orgChartFor, employees);
+  }, [orgChartFor, employees]);
+
   const totalPages = Math.max(1, Math.ceil(filteredManagers.length / PAGE_SIZE));
   const pageRows = useMemo(() => {
     const start = (page - 1) * PAGE_SIZE;
@@ -241,6 +251,8 @@ export default function ManagersPage() {
     setEditMakeDepartmentHead(
       Boolean(currentDept?.head === manager.public_id || manager.is_department_head),
     );
+    setEditEmploymentStatus(manager.employment_status);
+    setEditResignationDate(manager.resignation_date || '');
     setEditManager(manager);
   };
 
@@ -314,10 +326,17 @@ export default function ManagersPage() {
     setFormError('');
     setError('');
     const form = new FormData(event.currentTarget);
-    const employmentStatus = String(form.get('employment_status'));
+    const employmentStatus = editEmploymentStatus;
+    const isSeparating = ['resigned', 'terminated'].includes(employmentStatus.toLowerCase());
 
     if (!editHierarchy.companyId || !editHierarchy.branchId || !editHierarchy.departmentId) {
       setFormError('Organization, Branch, and Department are all required.');
+      setSaving(false);
+      return;
+    }
+
+    if (isSeparating && !editResignationDate) {
+      setFormError('A resignation/termination date is required for this employment status.');
       setSaving(false);
       return;
     }
@@ -348,6 +367,11 @@ export default function ManagersPage() {
         employment_status: employmentStatus,
         make_branch_manager: editMakeBranchManager,
         make_department_head: editMakeDepartmentHead,
+        ...(isSeparating
+          ? { resignation_date: editResignationDate }
+          : employmentStatus.toLowerCase() === 'active'
+            ? { resignation_date: null }
+            : {}),
       });
 
       setSuccess(`Manager information updated for ${editManager.first_name} ${editManager.last_name}.`);
@@ -679,13 +703,22 @@ export default function ManagersPage() {
                           <StatusBadge status={manager.employment_status} />
                         </td>
                         <td className="px-5 py-3.5 text-right">
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={() => openEditModal(manager)}
-                          >
-                            <Icon name="edit" size={13} /> Edit
-                          </Button>
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => setOrgChartFor(manager)}
+                            >
+                              <Icon name="users" size={13} /> Org Chart
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => openEditModal(manager)}
+                            >
+                              <Icon name="edit" size={13} /> Edit
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -987,13 +1020,27 @@ export default function ManagersPage() {
               <SelectField
                 label="Employment Status"
                 name="employment_status"
-                defaultValue={editManager.employment_status}
+                value={editEmploymentStatus}
+                onChange={(e) => setEditEmploymentStatus(e.target.value)}
               >
                 <option value="Active">Active</option>
                 <option value="On Leave">On Leave</option>
                 <option value="Inactive">Inactive</option>
+                <option value="Resigned">Resigned</option>
                 <option value="Terminated">Terminated</option>
               </SelectField>
+
+              {['resigned', 'terminated'].includes(editEmploymentStatus.toLowerCase()) && (
+                <Field
+                  label="Resignation / Termination Date"
+                  name="resignation_date"
+                  type="date"
+                  required
+                  value={editResignationDate}
+                  onChange={(e) => setEditResignationDate(e.target.value)}
+                  max={today}
+                />
+              )}
             </div>
 
             {/* Optional Leadership Designations */}
@@ -1051,6 +1098,80 @@ export default function ManagersPage() {
           </form>
         </Modal>
       )}
+
+      {/* Modal: Org Chart (read-only reporting chain, up and down) */}
+      {orgChartFor && orgChain && (
+        <Modal
+          title={`Org Chart — ${orgChartFor.first_name} ${orgChartFor.last_name}`}
+          description="Full reporting chain: every manager above, and every subordinate below, this employee."
+          onClose={() => setOrgChartFor(null)}
+          maxWidth="max-w-xl"
+        >
+          <div className="space-y-5">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2">
+                Reports up to
+              </p>
+              {orgChain.ancestors.length === 0 ? (
+                <p className="text-xs text-slate-500 italic">No manager above — top of the chain.</p>
+              ) : (
+                <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                  {[...orgChain.ancestors].reverse().map((ancestor, idx) => (
+                    <span key={ancestor.public_id} className="flex items-center gap-1.5">
+                      {idx > 0 && <Icon name="arrow" size={12} className="text-slate-400" />}
+                      <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 font-medium text-slate-700">
+                        {ancestor.first_name} {ancestor.last_name}
+                      </span>
+                    </span>
+                  ))}
+                  <Icon name="arrow" size={12} className="text-slate-400" />
+                  <span className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 font-semibold text-blue-700">
+                    {orgChartFor.first_name} {orgChartFor.last_name}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2">
+                Direct and indirect reports
+              </p>
+              {orgChain.descendants.length === 0 ? (
+                <p className="text-xs text-slate-500 italic">No subordinates below this employee.</p>
+              ) : (
+                <div className="max-h-80 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+                  <OrgChartSubtree nodes={orgChain.descendants} />
+                </div>
+              )}
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
+  );
+}
+
+function OrgChartSubtree({ nodes }: { nodes: OrgChartNode[] }) {
+  return (
+    <ul className="space-y-1.5">
+      {nodes.map((node) => (
+        <li key={node.employee.public_id}>
+          <div className="flex items-center gap-2 text-xs">
+            <Icon name="user" size={12} className="text-slate-400" />
+            <span className="font-medium text-slate-800">
+              {node.employee.first_name} {node.employee.last_name}
+            </span>
+            {node.employee.job_title && (
+              <span className="text-[11px] text-slate-500">· {node.employee.job_title}</span>
+            )}
+          </div>
+          {node.children.length > 0 && (
+            <div className="ml-4 mt-1.5 border-l border-slate-200 pl-3">
+              <OrgChartSubtree nodes={node.children} />
+            </div>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }

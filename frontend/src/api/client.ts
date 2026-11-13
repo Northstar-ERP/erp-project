@@ -13,8 +13,11 @@ import type {
   LeaveRequest,
   LeaveType,
   Project,
+  ReviewCycle,
   Role,
+  Scorecard,
   Task,
+  Team,
   UserAccount,
 } from './types';
 
@@ -44,8 +47,11 @@ export const endpoints = {
   companies: 'organization/companies/',
   branches: 'organization/branches/',
   departments: 'organization/departments/',
+  teams: 'organization/teams/',
   invite: 'users/invite/',
   activate: 'users/activate/',
+  reviewCycles: 'performance/cycles/',
+  scorecards: 'performance/scorecards/',
 };
 
 export const client = {
@@ -65,8 +71,12 @@ export const client = {
     api.get<{ valid: boolean; employee_name?: string; email?: string }>(
       `${endpoints.activate}?token=${encodeURIComponent(token)}`,
     ),
-  activateAccount: (data: { token: string; password: string; password_confirm?: string }) =>
-    api.post<{ message?: string; detail?: string }>(endpoints.activate, data),
+  activateAccount: (data: {
+    token: string;
+    password: string;
+    password_confirm?: string;
+    turnstile_token?: string;
+  }) => api.post<{ message?: string; detail?: string }>(endpoints.activate, data),
 
   // Employees
   employees: () => api.get<ApiListResponse<Employee>>(endpoints.employees),
@@ -76,6 +86,7 @@ export const client = {
     publicId: string,
     data: {
       employment_status?: string;
+      resignation_date?: string | null;
       department?: string | null;
       job_title?: string | null;
       phone?: string | null;
@@ -180,4 +191,24 @@ export const client = {
     api.post<Department>(endpoints.departments, data),
   updateDepartment: (publicId: string, data: Record<string, unknown>) =>
     api.patch<Department>(`${endpoints.departments}${publicId}/`, data),
+
+  teams: () => api.get<ApiListResponse<Team>>(endpoints.teams),
+
+  // Performance Management
+  reviewCycles: () =>
+    api.get<ApiListResponse<ReviewCycle>>(endpoints.reviewCycles),
+  createReviewCycle: (data: Record<string, unknown>) =>
+    api.post<ReviewCycle>(endpoints.reviewCycles, data),
+  updateReviewCycle: (publicId: string, data: Record<string, unknown>) =>
+    api.patch<ReviewCycle>(`${endpoints.reviewCycles}${publicId}/`, data),
+  scorecards: () =>
+    api.get<ApiListResponse<Scorecard>>(endpoints.scorecards),
+  createScorecard: (data: Record<string, unknown>) =>
+    api.post<Scorecard>(endpoints.scorecards, data),
+  updateScorecard: (publicId: string, data: Record<string, unknown>) =>
+    api.patch<Scorecard>(`${endpoints.scorecards}${publicId}/`, data),
+  deleteScorecard: (publicId: string) =>
+    api.delete(`${endpoints.scorecards}${publicId}/`),
+  submitScorecard: (publicId: string) =>
+    api.post<Scorecard>(`${endpoints.scorecards}${publicId}/submit/`, {}),
 };

@@ -66,6 +66,13 @@ class Department(AuditBaseModel):
         if self.head_id:
             if self.head.department_id != self.id:
                 raise ValidationError({'head': 'Department head must belong to this department.'})
+        if self.pk and self.branch_id:
+            old_branch_id = Department.objects.filter(pk=self.pk).values_list('branch_id', flat=True).first()
+            if old_branch_id and old_branch_id != self.branch_id:
+                if Branch.objects.filter(pk=old_branch_id, manager__department_id=self.pk).exists():
+                    raise ValidationError({
+                        'branch': 'Cannot move this department to another branch while its branch manager belongs to it.'
+                    })
 
     def __str__(self):
         return f"{self.name} ({self.branch.name})"

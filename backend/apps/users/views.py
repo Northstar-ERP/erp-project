@@ -24,6 +24,7 @@ from apps.utils.permissions import (
     IsSystemAdmin,
     IsSystemAdminOrHRManager,
 )
+from apps.utils.turnstile import verify_turnstile_token
 from apps.utils.views import AuditModelViewSet
 from apps.utils.cache import CacheableModelMixin, MASTER_DATA_TTL
 
@@ -259,12 +260,16 @@ class AccountActivationView(APIView):
         password = request.data.get('password', '')
         password_confirm = request.data.get('password_confirm', '')
 
+        turnstile_token = request.data.get('turnstile_token', '')
+
         if not token:
             return Response({'detail': 'Activation token is required.'}, status=status.HTTP_400_BAD_REQUEST)
         if not password:
             return Response({'detail': 'A new password is required.'}, status=status.HTTP_400_BAD_REQUEST)
         if password_confirm and password != password_confirm:
             return Response({'detail': 'Password confirmation does not match.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not verify_turnstile_token(turnstile_token, request.META.get('REMOTE_ADDR')):
+            return Response({'detail': 'Human verification failed. Please try again.'}, status=status.HTTP_400_BAD_REQUEST)
 
         user, employee = verify_activation_token(token)
 
@@ -281,7 +286,8 @@ class AccountActivationView(APIView):
         # Update employee status to Active
         if employee:
             employee.employment_status = 'Active'
-            employee.save(update_fields=['employment_status', 'updated_at'])
+            employee.resignation_date = None
+            employee.save(update_fields=['employment_status', 'resignation_date', 'updated_at'])
 
         return Response(
             {

@@ -4,7 +4,7 @@ import type { UserProfile } from '../api/types';
 export interface AuthContextValue {
   user: UserProfile | null;
   loading: boolean;
-  login: (username: string, password: string) => Promise<void>;
+  login: (username: string, password: string, turnstileToken?: string) => Promise<void>;
   logout: () => void;
   hasRole: (roles: string[]) => boolean;
 }

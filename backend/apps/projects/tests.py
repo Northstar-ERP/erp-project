@@ -124,6 +124,7 @@ class ProjectTaskApiTests(APITestCase):
             set(response.data[0]['manager_details']),
             {
                 'public_id',
+                'employee_code',
                 'first_name',
                 'last_name',
                 'job_title',

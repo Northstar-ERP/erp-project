@@ -109,6 +109,8 @@ export default function OrganizationPage() {
     departmentId: '',
   });
   const [editManager, setEditManager] = useState('');
+  const [editEmploymentStatus, setEditEmploymentStatus] = useState('');
+  const [editResignationDate, setEditResignationDate] = useState('');
 
   const [today] = useState(() => new Date().toISOString().slice(0, 10));
 
@@ -195,6 +197,7 @@ export default function OrganizationPage() {
       const email = (emp.email || '').toLowerCase();
       const jobTitle = (emp.job_title || '').toLowerCase();
       const empId = emp.public_id.toLowerCase();
+      const empCode = (emp.employee_code || '').toLowerCase();
 
       const matchesSearch =
         !search ||
@@ -202,7 +205,8 @@ export default function OrganizationPage() {
         username.includes(search.toLowerCase()) ||
         email.includes(search.toLowerCase()) ||
         jobTitle.includes(search.toLowerCase()) ||
-        empId.includes(search.toLowerCase());
+        empId.includes(search.toLowerCase()) ||
+        empCode.includes(search.toLowerCase());
 
       // Company matching
       const empCompanyId = getEmployeeCompanyId(emp);
@@ -239,7 +243,7 @@ export default function OrganizationPage() {
       } else if (activationFilter === 'pending') {
         matchesActivation = emp.employment_status.toLowerCase() === 'pending' || !isAccountActive;
       } else if (activationFilter === 'inactive') {
-        matchesActivation = !isAccountActive || ['inactive', 'terminated'].includes(emp.employment_status.toLowerCase());
+        matchesActivation = !isAccountActive || ['inactive', 'terminated', 'resigned'].includes(emp.employment_status.toLowerCase());
       }
 
       return matchesSearch && matchesCompany && matchesBranch && matchesDept && matchesStatus && matchesDesignation && matchesActivation;
@@ -436,7 +440,14 @@ export default function OrganizationPage() {
     const jobTitle = String(form.get('job_title') ?? '').trim() || null;
     const department = editHierarchy.departmentId || null;
     const manager = editManager || null;
-    const employmentStatus = String(form.get('employment_status') ?? editEmployee.employment_status);
+    const employmentStatus = editEmploymentStatus || editEmployee.employment_status;
+    const isSeparating = ['resigned', 'terminated'].includes(employmentStatus.toLowerCase());
+
+    if (isSeparating && !editResignationDate) {
+      setFormError('A resignation/termination date is required for this employment status.');
+      setSaving(false);
+      return;
+    }
 
     if (manager === editEmployee.public_id) {
       setFormError('An employee cannot be designated as their own reporting manager.');
@@ -472,6 +483,11 @@ export default function OrganizationPage() {
         department,
         manager,
         employment_status: employmentStatus,
+        ...(isSeparating
+          ? { resignation_date: editResignationDate }
+          : employmentStatus.toLowerCase() === 'active'
+            ? { resignation_date: null }
+            : {}),
       });
 
       setData((prev) => ({
@@ -500,7 +516,7 @@ export default function OrganizationPage() {
         ...prev,
         employees: prev.employees.filter((e) => e.public_id !== emp.public_id),
       }));
-      setSuccess(`Employee "${emp.first_name} ${emp.last_name}" (ID: ${emp.public_id.slice(0, 8)}…) has been soft-deleted from active records.`);
+      setSuccess(`Employee "${emp.first_name} ${emp.last_name}" (ID: ${emp.employee_code || emp.public_id.slice(0, 8)}) has been soft-deleted from active records.`);
       setEmployeeToDelete(null);
     } catch (cause) {
       setError(displayError(cause) || 'Failed to delete employee. The record may be restricted by existing assignments.');
@@ -727,6 +743,7 @@ export default function OrganizationPage() {
                   <option value="Active">Active</option>
                   <option value="On Leave">On Leave</option>
                   <option value="Inactive">Inactive</option>
+                  <option value="Resigned">Resigned</option>
                   <option value="Terminated">Terminated</option>
                 </select>
 
@@ -781,7 +798,7 @@ export default function OrganizationPage() {
                       <th className="px-5 py-3.5">Employee Name & ID</th>
                       <th className="px-5 py-3.5">Department, Branch & Org</th>
                       <th className="px-5 py-3.5">Designation</th>
-                      <th className="px-5 py-3.5">Joining Date</th>
+                      <th className="px-5 py-3.5">Joining / Exit Date</th>
                       <th className="px-5 py-3.5">Employment Status</th>
                       <th className="px-5 py-3.5">Account Status</th>
                       <th className="px-5 py-3.5 text-right">Actions</th>
@@ -812,7 +829,7 @@ export default function OrganizationPage() {
                                   {emp.email || `@${emp.user_details?.username || 'user'}`}
                                 </p>
                                 <span className="font-mono text-[10px] text-slate-400">
-                                  ID: {emp.public_id.slice(0, 8)}…
+                                  ID: {emp.employee_code || emp.public_id.slice(0, 8)}
                                 </span>
                               </div>
                             </div>
@@ -842,7 +859,12 @@ export default function OrganizationPage() {
                             </p>
                           </td>
                           <td className="px-5 py-3.5 text-slate-600">
-                            {formatDate(emp.hire_date)}
+                            <p>{formatDate(emp.hire_date)}</p>
+                            {emp.resignation_date && (
+                              <p className="text-[10px] text-rose-500">
+                                Exit: {formatDate(emp.resignation_date)}
+                              </p>
+                            )}
                           </td>
                           <td className="px-5 py-3.5">
                             <StatusBadge status={emp.employment_status} />
@@ -888,6 +910,8 @@ export default function OrganizationPage() {
                                       ),
                                     );
                                     setEditManager(emp.manager || '');
+                                    setEditEmploymentStatus(emp.employment_status);
+                                    setEditResignationDate(emp.resignation_date || '');
                                     setEditEmployee(emp);
                                   }}
                                   className="rounded-md p-1.5 text-blue-600 hover:bg-blue-50 transition"
@@ -1438,7 +1462,7 @@ export default function OrganizationPage() {
                   {viewEmployee.job_title || 'Staff Member'} · {viewEmployee.department_name || 'Unassigned'}
                 </p>
                 <p className="text-[11px] font-mono text-slate-400 mt-0.5">
-                  ID: {viewEmployee.public_id}
+                  ID: {viewEmployee.employee_code || viewEmployee.public_id}
                 </p>
               </div>
             </div>
@@ -1479,6 +1503,17 @@ export default function OrganizationPage() {
                   {formatDate(viewEmployee.hire_date)}
                 </p>
               </div>
+
+              {viewEmployee.resignation_date && (
+                <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-2xs">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                    Resignation / Termination Date
+                  </p>
+                  <p className="mt-1 font-semibold text-slate-800">
+                    {formatDate(viewEmployee.resignation_date)}
+                  </p>
+                </div>
+              )}
 
               <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-2xs">
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
@@ -1564,6 +1599,8 @@ export default function OrganizationPage() {
                       ),
                     );
                     setEditManager(target.manager || '');
+                    setEditEmploymentStatus(target.employment_status);
+                    setEditResignationDate(target.resignation_date || '');
                     setEditEmployee(target);
                   }}
                 >
@@ -1670,13 +1707,27 @@ export default function OrganizationPage() {
               <SelectField
                 label="Employment Status"
                 name="employment_status"
-                defaultValue={editEmployee.employment_status}
+                value={editEmploymentStatus}
+                onChange={(e) => setEditEmploymentStatus(e.target.value)}
               >
                 <option value="Active">Active</option>
                 <option value="On Leave">On Leave</option>
                 <option value="Inactive">Inactive</option>
+                <option value="Resigned">Resigned</option>
                 <option value="Terminated">Terminated</option>
               </SelectField>
+
+              {['resigned', 'terminated'].includes(editEmploymentStatus.toLowerCase()) && (
+                <Field
+                  label="Resignation / Termination Date"
+                  name="resignation_date"
+                  type="date"
+                  required
+                  value={editResignationDate}
+                  onChange={(e) => setEditResignationDate(e.target.value)}
+                  max={today}
+                />
+              )}
             </div>
 
             <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
@@ -1701,7 +1752,7 @@ export default function OrganizationPage() {
         <ConfirmDialog
           isOpen={true}
           title="Delete Employee Record"
-          description={`Are you sure you want to delete the employee record for "${employeeToDelete.first_name} ${employeeToDelete.last_name}" (ID: ${employeeToDelete.public_id})? This will perform a backend soft-deletion, removing them from active workforce rosters while preserving historical audit logs, past leave, attendance, and expense records.`}
+          description={`Are you sure you want to delete the employee record for "${employeeToDelete.first_name} ${employeeToDelete.last_name}" (ID: ${employeeToDelete.employee_code || employeeToDelete.public_id})? This will perform a backend soft-deletion, removing them from active workforce rosters while preserving historical audit logs, past leave, attendance, and expense records.`}
           confirmLabel="Delete Employee"
           isDestructive={true}
           isLoading={deleting}

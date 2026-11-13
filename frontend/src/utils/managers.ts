@@ -57,6 +57,44 @@ export function isRoleManager(roleName: string): boolean {
   );
 }
 
+export interface OrgChartNode {
+  employee: Employee;
+  children: OrgChartNode[];
+}
+
+/**
+ * Builds the full reporting chain for an employee: every manager above them
+ * (closest first) and the full subordinate tree below them. Walks the
+ * manager/subordinate links defensively so a data cycle can't infinite-loop
+ * the UI (the backend rejects cycles on write, but this stays safe either way).
+ */
+export function buildOrgChain(employee: Employee, employees: Employee[]) {
+  const byId = new Map(employees.map((e) => [e.public_id, e]));
+
+  const ancestors: Employee[] = [];
+  const seenAncestors = new Set<string>([employee.public_id]);
+  let current = employee.manager ? byId.get(employee.manager) : undefined;
+  while (current && !seenAncestors.has(current.public_id)) {
+    ancestors.push(current);
+    seenAncestors.add(current.public_id);
+    current = current.manager ? byId.get(current.manager) : undefined;
+  }
+
+  const buildDescendants = (managerId: string, seen: Set<string>): OrgChartNode[] => {
+    return employees
+      .filter((e) => e.manager === managerId && !seen.has(e.public_id))
+      .map((child) => {
+        const nextSeen = new Set(seen);
+        nextSeen.add(child.public_id);
+        return { employee: child, children: buildDescendants(child.public_id, nextSeen) };
+      });
+  };
+
+  const descendants = buildDescendants(employee.public_id, new Set([employee.public_id]));
+
+  return { ancestors, descendants };
+}
+
 export function isEmployeeManager(
   emp: Employee,
   branches: Branch[],

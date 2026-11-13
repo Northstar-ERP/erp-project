@@ -22,7 +22,7 @@ class UserAdmin(BaseUserAdmin):
 
 @admin.register(Employee)
 class EmployeeAdmin(admin.ModelAdmin):
-    list_display = ['first_name', 'last_name', 'email', 'employment_status', 'user']
+    list_display = ['first_name', 'last_name', 'email', 'employment_status', 'resignation_date', 'user']
     search_fields = ['first_name', 'last_name', 'email']
 
 

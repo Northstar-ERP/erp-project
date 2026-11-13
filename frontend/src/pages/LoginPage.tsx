@@ -2,6 +2,9 @@ import { useState, type FormEvent } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/auth';
 import { Button, ErrorMessage, Icon, Field } from '../components/ui';
+import Turnstile from '../components/Turnstile';
+
+const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY;
 
 export default function LoginPage() {
   const { user, loading, login } = useAuth();
@@ -13,6 +16,7 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [currentYear] = useState(() => new Date().getFullYear());
+  const [turnstileToken, setTurnstileToken] = useState('');
 
   if (!loading && user) {
     return <Navigate to="/dashboard" replace />;
@@ -23,7 +27,7 @@ export default function LoginPage() {
     setError('');
     setSubmitting(true);
     try {
-      await login(username.trim(), password);
+      await login(username.trim(), password, turnstileToken);
       const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname;
       navigate(from || '/dashboard', { replace: true });
     } catch (cause) {
@@ -166,12 +170,26 @@ export default function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
             />
 
+            {TURNSTILE_SITE_KEY && (
+              <Turnstile
+                siteKey={TURNSTILE_SITE_KEY}
+                onVerify={setTurnstileToken}
+                onExpire={() => setTurnstileToken('')}
+              />
+            )}
+
             <Button
               type="submit"
               variant="primary"
               size="lg"
               className="w-full"
-              disabled={submitting || loading || !username.trim() || !password}
+              disabled={
+                submitting ||
+                loading ||
+                !username.trim() ||
+                !password ||
+                (Boolean(TURNSTILE_SITE_KEY) && !turnstileToken)
+              }
             >
               {submitting ? (
                 <>

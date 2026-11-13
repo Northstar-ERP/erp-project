@@ -1,0 +1,46 @@
+# Local development dependencies only (Postgres + Redis).
+#
+# This does NOT run the Django app or Nginx — for the production stack, see
+# deploy/docker-compose.yml, which is what CI deploys via GitHub Actions.
+#
+# Usage: docker compose up -d
+# Then point backend/.env at these services (see README.md / .env.example):
+#   POSTGRES_HOST=127.0.0.1
+#   POSTGRES_PORT=5433
+#   POSTGRES_DB=erp_local
+#   POSTGRES_USER=erp_app
+#   POSTGRES_PASSWORD=erp_app
+#   POSTGRES_SSLMODE=disable
+#   REDIS_URL=redis://127.0.0.1:6379/0
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: erp_local_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: erp_local
+      POSTGRES_USER: erp_app
+      POSTGRES_PASSWORD: erp_app
+    ports:
+      - "5433:5432"
+    volumes:
+      - erp_local_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U erp_app -d erp_local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: erp_local_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - erp_local_redis_data:/data
+
+volumes:
+  erp_local_postgres_data:
+  erp_local_redis_data:

@@ -4,7 +4,7 @@ from rest_framework.exceptions import ValidationError
 from apps.users.models import Employee
 from .models import Company, Branch, Department, Team
 from .serializers import CompanySerializer, BranchSerializer, DepartmentSerializer, TeamSerializer
-from apps.utils.permissions import IsSystemAdminOrHRManager
+from apps.utils.permissions import IsSystemAdmin, IsSystemAdminOrHRManager
 from apps.utils.views import AuditModelViewSet
 from apps.utils.cache import CacheableModelMixin, MASTER_DATA_TTL
 
@@ -12,9 +12,15 @@ from apps.utils.cache import CacheableModelMixin, MASTER_DATA_TTL
 class CompanyViewSet(CacheableModelMixin, AuditModelViewSet):
     queryset = Company.objects.select_related('created_by').all()
     serializer_class = CompanySerializer
-    permission_classes = [IsSystemAdminOrHRManager]
     cache_ttl = MASTER_DATA_TTL
     cache_actions = ['list', 'retrieve']
+
+    def get_permissions(self):
+        # Creating/renaming/deleting legal entities is a System Admin action;
+        # HR Managers may only read the list to assign employees into it.
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsSystemAdmin()]
+        return [IsSystemAdminOrHRManager()]
 
     @transaction.atomic
     def perform_destroy(self, instance):
@@ -38,9 +44,16 @@ class CompanyViewSet(CacheableModelMixin, AuditModelViewSet):
 class BranchViewSet(CacheableModelMixin, AuditModelViewSet):
     queryset = Branch.objects.select_related('company', 'manager', 'manager__user', 'created_by').all()
     serializer_class = BranchSerializer
-    permission_classes = [IsSystemAdminOrHRManager]
     cache_ttl = MASTER_DATA_TTL
     cache_actions = ['list', 'retrieve']
+
+    def get_permissions(self):
+        # Opening/closing branches restructures the company; restrict to System Admin.
+        # Day-to-day branch-manager reassignment also lives here, so HR still needs
+        # read access to populate pickers, just not create/update/destroy.
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsSystemAdmin()]
+        return [IsSystemAdminOrHRManager()]
 
 
 class DepartmentViewSet(CacheableModelMixin, AuditModelViewSet):

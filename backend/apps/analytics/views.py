@@ -10,9 +10,10 @@ from apps.organization.models import Department
 from apps.assets.models import Asset
 from apps.assets.models import AssetAllocation, AssetHistory
 
-from django.db.models import Count, Sum
+from django.db.models import Avg, Count, Sum
 from apps.expense.models import Expense
 from apps.leave.models import LeaveRequest, LeaveBalance
+from apps.performance.models import Scorecard
 
 
 @api_view(["GET"])
@@ -109,6 +110,42 @@ def dashboard_summary(request):
         .order_by("year")
     )
 
+    # Performance analytics (rated, submitted scorecards only)
+    rated_scorecards = Scorecard.objects.filter(
+        status=Scorecard.Status.SUBMITTED, rating__isnull=False
+    )
+
+    performance_totals = {
+        "count": rated_scorecards.count(),
+        "avg_rating": rated_scorecards.aggregate(avg=Avg("rating"))["avg"] or 0,
+    }
+
+    performance_by_cycle = list(
+        rated_scorecards.values("cycle__period_label")
+        .annotate(avg_rating=Avg("rating"), total=Count("id"))
+        .order_by("cycle__period_label")
+    )
+
+    performance_by_department = list(
+        rated_scorecards.values(
+            "cycle__period_label", "employee__department__name"
+        )
+        .annotate(avg_rating=Avg("rating"), total=Count("id"))
+        .order_by("cycle__period_label", "employee__department__name")
+    )
+
+    performance_by_company = list(
+        rated_scorecards.values(
+            "cycle__period_label",
+            "employee__department__branch__company__name",
+        )
+        .annotate(avg_rating=Avg("rating"), total=Count("id"))
+        .order_by(
+            "cycle__period_label",
+            "employee__department__branch__company__name",
+        )
+    )
+
     # Month-wise project creation
     projects_by_month = list(
         Project.objects.annotate(month=TruncMonth("created_at"))
@@ -171,6 +208,10 @@ def dashboard_summary(request):
         "leaves_by_status": leaves_by_status,
         "leaves_by_type": leaves_by_type,
         "leave_balances": leave_balances,
+        "performance_totals": performance_totals,
+        "performance_by_cycle": performance_by_cycle,
+        "performance_by_department": performance_by_department,
+        "performance_by_company": performance_by_company,
         "monthly_analytics": {
             "projects_created": projects_by_month,
             "tasks_created": tasks_by_month,

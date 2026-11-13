@@ -32,6 +32,7 @@ const adminNavGroups: NavGroup[] = [
     items: [
       { to: '/admin/organizations', label: 'Organizations', icon: 'building' },
       { to: '/admin/branches', label: 'Branches', icon: 'briefcase' },
+      { to: '/admin/org-chart', label: 'Organization Chart', icon: 'sitemap' },
       { to: '/admin/managers', label: 'Managers', icon: 'users' },
       { to: '/admin/employees', label: 'Employee Directory (Read Only)', icon: 'user' },
     ],
@@ -43,6 +44,7 @@ const adminNavGroups: NavGroup[] = [
       { to: '/leave', label: 'Leave Overview', icon: 'calendar' },
       { to: '/attendance', label: 'Attendance Overview', icon: 'clock' },
       { to: '/expenses', label: 'Expense Overview', icon: 'receipt' },
+      { to: '/performance', label: 'Performance Overview', icon: 'star' },
     ],
   },
 ];
@@ -58,10 +60,12 @@ const hrNavGroups: NavGroup[] = [
     group: 'HR Management',
     items: [
       { to: '/organization', label: 'Employee Management', icon: 'users' },
+      { to: '/admin/org-chart', label: 'Organization Chart', icon: 'sitemap' },
       { to: '/assets', label: 'Asset Management', icon: 'cube' },
       { to: '/leave', label: 'Leave Management', icon: 'calendar' },
       { to: '/attendance', label: 'Attendance Management', icon: 'clock' },
       { to: '/expenses', label: 'Expense Management', icon: 'receipt' },
+      { to: '/performance', label: 'Performance Management', icon: 'star' },
     ],
   },
 ];
@@ -82,6 +86,7 @@ const projectManagerNavGroups: NavGroup[] = [
       { to: '/pm/tasks', label: 'Task Management', icon: 'check-circle' },
       { to: '/pm/availability', label: 'Employee Availability', icon: 'calendar' },
       { to: '/pm/calendar', label: 'Schedule / Calendar', icon: 'clock' },
+      { to: '/performance', label: 'Performance Reviews', icon: 'star' },
     ],
   },
 ];
@@ -102,6 +107,7 @@ const employeeNavGroups: NavGroup[] = [
       { to: '/leave', label: 'My Leave', icon: 'calendar' },
       { to: '/attendance', label: 'My Attendance', icon: 'clock' },
       { to: '/expenses', label: 'My Expenses', icon: 'receipt' },
+      { to: '/performance', label: 'My Performance', icon: 'star' },
     ],
   },
 ];
@@ -154,6 +160,7 @@ export default function Layout() {
     if (location.pathname === '/admin/organizations') return 'Organizations';
     if (location.pathname === '/admin/branches') return 'Branches';
     if (location.pathname === '/admin/employees') return 'Employee Directory (Read Only)';
+    if (location.pathname === '/admin/org-chart') return 'Organization Chart';
     if (location.pathname === '/pm/directory') return 'Employee Directory';
     if (location.pathname === '/organization') return isHR ? 'Employee Management' : 'Organization';
     if (location.pathname === '/pm/projects') return 'My Projects';
@@ -164,6 +171,7 @@ export default function Layout() {
     if (location.pathname === '/leave') return isAdmin ? 'Leave Overview' : isHR ? 'Leave Management' : 'My Leave';
     if (location.pathname === '/attendance') return isAdmin ? 'Attendance Overview' : isHR ? 'Attendance Management' : 'My Attendance';
     if (location.pathname === '/expenses') return isAdmin ? 'Expense Overview' : isHR ? 'Expense Management' : 'My Expenses';
+    if (location.pathname === '/performance') return isAdmin ? 'Performance Overview' : isHR ? 'Performance Management' : isPM ? 'Performance Reviews' : 'My Performance';
     if (location.pathname === '/assets') return isAdmin ? 'Asset Overview' : 'Asset Management';
     if (location.pathname === '/projects') return 'My Projects & Tasks';
 
@@ -175,7 +183,7 @@ export default function Layout() {
       }
     }
     return 'Workspace';
-  }, [location.pathname, activeNavGroups, isHR, isAdmin]);
+  }, [location.pathname, activeNavGroups, isHR, isAdmin, isPM]);
 
   // Load pending approvals for notification pill
   useEffect(() => {

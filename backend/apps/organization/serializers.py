@@ -102,6 +102,15 @@ class DepartmentSerializer(serializers.ModelSerializer):
                     raise serializers.ValidationError({
                         'head': 'Department head must belong to this department.'
                     })
+
+        if 'branch' in attrs and self.instance:
+            new_branch = attrs.get('branch')
+            old_branch = self.instance.branch
+            if new_branch and old_branch and new_branch.id != old_branch.id:
+                if old_branch.manager_id and old_branch.manager.department_id == self.instance.id:
+                    raise serializers.ValidationError({
+                        'branch': f"Cannot move this department out of '{old_branch.name}' while its branch manager belongs to it. Reassign the branch manager first."
+                    })
         return attrs
 
 

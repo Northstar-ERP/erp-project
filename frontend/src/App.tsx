@@ -8,12 +8,14 @@ import AnalyticsPage from './pages/AnalyticsPage';
 import DashboardPage from './pages/DashboardPage';
 import ExpensesPage from './pages/ExpensesPage';
 import LeavePage from './pages/LeavePage';
+import PerformancePage from './pages/PerformancePage';
 import LoginPage from './pages/LoginPage';
 import AccountActivationPage from './pages/AccountActivationPage';
 import OrganizationPage from './pages/OrganizationPage';
 import AdminEmployeeDirectoryPage from './pages/AdminEmployeeDirectoryPage';
 import OrganizationsPage from './pages/OrganizationsPage';
 import BranchesPage from './pages/BranchesPage';
+import OrgChartPage from './pages/OrgChartPage';
 import ManagersPage from './pages/ManagersPage';
 import ProjectsPage from './pages/ProjectsPage';
 import ProjectManagerProjectsPage from './pages/pm/ProjectManagerProjectsPage';
@@ -66,6 +68,14 @@ export default function App() {
                 element={
                   <RoleRoute roles={['System Admin']}>
                     <AdminEmployeeDirectoryPage />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/admin/org-chart"
+                element={
+                  <RoleRoute roles={['System Admin', 'HR Manager']}>
+                    <OrgChartPage />
                   </RoleRoute>
                 }
               />
@@ -169,6 +179,7 @@ export default function App() {
                 }
               />
               <Route path="/leave" element={<LeavePage />} />
+              <Route path="/performance" element={<PerformancePage />} />
               <Route path="/attendance" element={<AttendancePage />} />
               <Route path="/expenses" element={<ExpensesPage />} />
               <Route path="/" element={<Navigate to="/dashboard" replace />} />

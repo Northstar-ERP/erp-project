@@ -4,10 +4,13 @@ from django.contrib.auth.password_validation import validate_password as django_
 from django.db import transaction
 from .models import Role, User, Employee
 from apps.organization.models import Department
+from apps.utils.turnstile import verify_turnstile_token
 
 _UNSET = object()
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    turnstile_token = serializers.CharField(write_only=True, required=False, allow_blank=True)
+
     @classmethod
     def get_token(cls, user):
         token = super().get_token(user)
@@ -17,6 +20,18 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         token['role'] = user.role.role_name if user.role else None
 
         return token
+
+    def validate(self, attrs):
+        token = attrs.pop('turnstile_token', '')
+        request = self.context.get('request')
+        remote_ip = request.META.get('REMOTE_ADDR') if request else None
+
+        if not verify_turnstile_token(token, remote_ip):
+            raise serializers.ValidationError(
+                {'turnstile_token': 'Human verification failed. Please try again.'}
+            )
+
+        return super().validate(attrs)
 
 
 class RoleSerializer(serializers.ModelSerializer):
@@ -87,6 +102,7 @@ class EmployeeDirectorySerializer(serializers.ModelSerializer):
         model = Employee
         fields = [
             'public_id',
+            'employee_code',
             'first_name',
             'last_name',
             'job_title',
@@ -172,11 +188,11 @@ class EmployeeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Employee
         fields = [
-            'public_id', 'user', 'user_details', 'role_name',
+            'public_id', 'employee_code', 'user', 'user_details', 'role_name',
             'username', 'password', 'role', 'is_active',
             'make_branch_manager', 'make_department_head',
             'first_name', 'last_name',
-            'email', 'phone', 'hire_date', 'employment_status',
+            'email', 'phone', 'hire_date', 'employment_status', 'resignation_date',
             'job_title', 'department', 'department_name',
             'branch', 'branch_name', 'company', 'company_name',
             'manager', 'manager_name',
@@ -322,6 +338,31 @@ class EmployeeSerializer(serializers.ModelSerializer):
                     raise serializers.ValidationError({
                         "department": f"Cannot move employee to another company while '{sub.first_name} {sub.last_name}' reports to them."
                     })
+
+        # Resignation date: required on separation, cleared on reactivation, never before hire.
+        hire_date = attrs.get('hire_date', instance.hire_date if instance else None)
+        resignation_date = attrs.get(
+            'resignation_date', instance.resignation_date if instance else None
+        )
+        status_key = status_val.lower()
+        if status_key in Employee.SEPARATION_STATUSES:
+            if not resignation_date:
+                raise serializers.ValidationError({
+                    "resignation_date": "Resignation date is required when employment status is Resigned or Terminated."
+                })
+            if instance and instance.subordinates.filter(is_deleted=False).exists():
+                raise serializers.ValidationError({
+                    "employment_status": "Reassign this employee's direct reports to another manager first."
+                })
+        elif status_key == 'active':
+            # Resigning/terminating is reversible (e.g. rehire); clear any stale date.
+            resignation_date = None
+            attrs['resignation_date'] = None
+
+        if resignation_date and hire_date and resignation_date < hire_date:
+            raise serializers.ValidationError({
+                "resignation_date": "Resignation date cannot be before the hire date."
+            })
 
         return attrs
 

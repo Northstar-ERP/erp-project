@@ -147,6 +147,7 @@ export default function AdminEmployeeDirectoryPage() {
       const email = (emp.email || '').toLowerCase();
       const jobTitle = (emp.job_title || '').toLowerCase();
       const empId = emp.public_id.toLowerCase();
+      const empCode = (emp.employee_code || '').toLowerCase();
 
       const matchesSearch =
         !search ||
@@ -154,7 +155,8 @@ export default function AdminEmployeeDirectoryPage() {
         username.includes(search.toLowerCase()) ||
         email.includes(search.toLowerCase()) ||
         jobTitle.includes(search.toLowerCase()) ||
-        empId.includes(search.toLowerCase());
+        empId.includes(search.toLowerCase()) ||
+        empCode.includes(search.toLowerCase());
 
       // Department matching
       const matchesDept =
@@ -191,7 +193,7 @@ export default function AdminEmployeeDirectoryPage() {
       } else if (activationFilter === 'pending') {
         matchesActivation = emp.employment_status.toLowerCase() === 'pending' || !isAccountActive;
       } else if (activationFilter === 'inactive') {
-        matchesActivation = !isAccountActive || ['inactive', 'terminated'].includes(emp.employment_status.toLowerCase());
+        matchesActivation = !isAccountActive || ['inactive', 'terminated', 'resigned'].includes(emp.employment_status.toLowerCase());
       }
 
       return matchesSearch && matchesDept && matchesBranch && matchesCompany && matchesDesignation && matchesStatus && matchesActivation;
@@ -226,7 +228,7 @@ export default function AdminEmployeeDirectoryPage() {
       e.user_details?.is_active === false,
   ).length;
   const inactiveEmployeesCount = data.employees.filter(
-    (e) => ['inactive', 'terminated'].includes((e.employment_status || '').toLowerCase()),
+    (e) => ['inactive', 'terminated', 'resigned'].includes((e.employment_status || '').toLowerCase()),
   ).length;
 
   if (loading) {
@@ -448,6 +450,7 @@ export default function AdminEmployeeDirectoryPage() {
                   <option value="Active">Active</option>
                   <option value="On Leave">On Leave</option>
                   <option value="Inactive">Inactive</option>
+                  <option value="Resigned">Resigned</option>
                   <option value="Terminated">Terminated</option>
                 </select>
 
@@ -504,7 +507,7 @@ export default function AdminEmployeeDirectoryPage() {
                       <th className="px-5 py-3.5">Designation</th>
                       <th className="px-5 py-3.5">Official Email</th>
                       <th className="px-5 py-3.5">Reporting Manager</th>
-                      <th className="px-5 py-3.5">Joining Date</th>
+                      <th className="px-5 py-3.5">Joining / Exit Date</th>
                       <th className="px-5 py-3.5">Employment Status</th>
                       <th className="px-5 py-3.5">Account Status</th>
                       <th className="px-5 py-3.5 text-right">Details</th>
@@ -538,7 +541,7 @@ export default function AdminEmployeeDirectoryPage() {
                                   {emp.first_name} {emp.last_name}
                                 </p>
                                 <span className="font-mono text-[10px] text-slate-400">
-                                  ID: {emp.public_id.slice(0, 8)}…
+                                  ID: {emp.employee_code || emp.public_id.slice(0, 8)}
                                 </span>
                               </div>
                             </div>
@@ -580,7 +583,12 @@ export default function AdminEmployeeDirectoryPage() {
                           </td>
 
                           <td className="px-5 py-3.5 text-slate-600 whitespace-nowrap">
-                            {formatDate(emp.hire_date)}
+                            <p>{formatDate(emp.hire_date)}</p>
+                            {emp.resignation_date && (
+                              <p className="text-[10px] text-rose-500">
+                                Exit: {formatDate(emp.resignation_date)}
+                              </p>
+                            )}
                           </td>
 
                           <td className="px-5 py-3.5">
@@ -763,7 +771,7 @@ export default function AdminEmployeeDirectoryPage() {
                   {viewEmployee.job_title || 'Staff Member'} · {viewEmployee.department_name || 'Unassigned'}
                 </p>
                 <p className="text-[11px] font-mono text-slate-400 mt-0.5">
-                  ID: {viewEmployee.public_id}
+                  ID: {viewEmployee.employee_code || viewEmployee.public_id}
                 </p>
               </div>
             </div>
@@ -804,6 +812,17 @@ export default function AdminEmployeeDirectoryPage() {
                   {formatDate(viewEmployee.hire_date)}
                 </p>
               </div>
+
+              {viewEmployee.resignation_date && (
+                <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-2xs">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                    Resignation / Termination Date
+                  </p>
+                  <p className="mt-1 font-semibold text-slate-800">
+                    {formatDate(viewEmployee.resignation_date)}
+                  </p>
+                </div>
+              )}
 
               <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-2xs">
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">

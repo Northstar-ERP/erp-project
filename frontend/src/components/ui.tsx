@@ -38,7 +38,9 @@ export type IconName =
   | 'trash'
   | 'download'
   | 'panel-left'
-  | 'help';
+  | 'help'
+  | 'sitemap'
+  | 'star';
 
 const iconPaths: Record<IconName, ReactNode> = {
   grid: <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /></>,
@@ -73,6 +75,8 @@ const iconPaths: Record<IconName, ReactNode> = {
   download: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></>,
   'panel-left': <><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 3v18" /></>,
   help: <><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01" /></>,
+  sitemap: <><rect x="9" y="3" width="6" height="5" rx="1" /><rect x="3" y="16" width="6" height="5" rx="1" /><rect x="15" y="16" width="6" height="5" rx="1" /><path d="M12 8v4M6 16v-2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2" /></>,
+  star: <path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />,
 };
 
 export function Icon({
@@ -182,7 +186,8 @@ export function StatusBadge({ status }: { status: string }) {
     key === 'lost' ||
     key === 'retired' ||
     key === 'inactive' ||
-    key === 'terminated';
+    key === 'terminated' ||
+    key === 'resigned';
 
   let badgeStyle = 'bg-slate-100 text-slate-700 border-slate-200';
   let dotStyle = 'bg-slate-400';

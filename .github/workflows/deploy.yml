@@ -5,6 +5,9 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -14,8 +17,53 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  test:
+    name: Test and Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: uv sync --locked
+
+      - name: Run backend test suite
+        working-directory: backend
+        env:
+          SECRET_KEY: ci-test-secret-key
+          JWT_SECRET_KEY: ci-test-jwt-secret-key
+        run: uv run python manage.py test
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint frontend
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Typecheck and build frontend
+        working-directory: frontend
+        env:
+          VITE_API_BASE_URL: /api/
+        run: npm run build
+
   deploy:
     name: Build and Deploy to AWS EC2
+    needs: test
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
 
     env:

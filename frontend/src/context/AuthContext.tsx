@@ -118,10 +118,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(
-    async (username: string, password: string) => {
+    async (username: string, password: string, turnstileToken?: string) => {
       const { data } = await api.post<LoginResponse>(endpoints.login, {
         username,
         password,
+        ...(turnstileToken ? { turnstile_token: turnstileToken } : {}),
       });
 
       if (!data.access || !data.refresh) {

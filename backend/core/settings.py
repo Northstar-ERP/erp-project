@@ -16,6 +16,10 @@ load_dotenv(env_path)
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.environ.get('SECRET_KEY')
 
+# Cloudflare Turnstile - server-side verification secret. Left blank disables the check
+# (e.g. local dev without keys configured) rather than locking everyone out.
+TURNSTILE_SECRET_KEY = os.environ.get('TURNSTILE_SECRET_KEY', '')
+
 # 1. DEBUG: Defaults to False in production unless explicitly set to True in .env
 DEBUG = os.environ.get("DEBUG", "False").strip().lower() in ("true", "1", "yes")
 
@@ -45,6 +49,7 @@ INSTALLED_APPS = [
     'apps.analytics.apps.AnalyticsConfig',
     'apps.leave.apps.LeaveConfig',
     'apps.expense.apps.ExpenseConfig',
+    'apps.performance.apps.PerformanceConfig',
     'apps.attendance.apps.AttendanceConfig',
     'apps.notifications.apps.NotificationsConfig',
 ]
@@ -146,7 +151,7 @@ else:
             'CONN_MAX_AGE': 0 if is_pooler else 60,
             'DISABLE_SERVER_SIDE_CURSORS': is_pooler,
             'OPTIONS': {
-                'sslmode': 'require',
+                'sslmode': os.environ.get('POSTGRES_SSLMODE', 'require'),
             },
         }
     }

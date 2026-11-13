@@ -1,8 +1,10 @@
 from datetime import date
 
+from django.core.exceptions import ValidationError
+from django.test import TestCase
 from django.urls import reverse
 from rest_framework import status
-from rest_framework.test import APITestCase
+from rest_framework.test import APIClient, APITestCase
 
 from apps.organization.models import Branch, Company, Department
 from apps.users.models import Employee, Role, User
@@ -153,6 +155,7 @@ class EmployeeDirectoryApiTests(APITestCase):
             set(employee_data),
             {
                 'public_id',
+                'employee_code',
                 'first_name',
                 'last_name',
                 'job_title',
@@ -621,5 +624,334 @@ class EmployeeHierarchyValidationTests(APITestCase):
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST, res.data)
         self.assertIn('department', res.data)
 
+    def test_manager_cycle_detected_more_than_one_level_deep(self):
+        self.client.force_authenticate(self.hr_user)
 
+        user_a3 = User.objects.create_user(
+            username='emp_a3', password='Strong!Password#12', role=self.employee_role
+        )
+        emp_a3 = Employee.objects.create(
+            user=user_a3,
+            first_name='Carol',
+            last_name='Gamma',
+            email='carol@alpha.example',
+            hire_date=date(2024, 3, 1),
+            employment_status='Active',
+            department=self.dept_a1_eng,
+        )
+
+        # Build a same-company chain: emp_a3 -> emp_a1.
+        chain_url = reverse('employee-detail', kwargs={'public_id': str(emp_a3.public_id)})
+        res_set_a3_manager = self.client.patch(
+            chain_url,
+            {'manager': str(self.emp_a1.public_id)},
+            format='json',
+        )
+        self.assertEqual(res_set_a3_manager.status_code, status.HTTP_200_OK, res_set_a3_manager.data)
+
+        # Make a third link so emp_a1 reports to a new employee, who reports back to emp_a3.
+        user_a4 = User.objects.create_user(
+            username='emp_a4', password='Strong!Password#12', role=self.employee_role
+        )
+        emp_a4 = Employee.objects.create(
+            user=user_a4,
+            first_name='Dan',
+            last_name='Delta',
+            email='dan@alpha.example',
+            hire_date=date(2024, 4, 1),
+            employment_status='Active',
+            department=self.dept_a1_eng,
+        )
+
+        a1_url = reverse('employee-detail', kwargs={'public_id': str(self.emp_a1.public_id)})
+        res_set_a1_manager = self.client.patch(
+            a1_url,
+            {'manager': str(emp_a4.public_id)},
+            format='json',
+        )
+        self.assertEqual(res_set_a1_manager.status_code, status.HTTP_200_OK, res_set_a1_manager.data)
+
+        # Chain is now: emp_a3 -> emp_a1 -> emp_a4. Closing the loop (emp_a4 -> emp_a3)
+        # is an indirect, three-level cycle and must be rejected.
+        a4_url = reverse('employee-detail', kwargs={'public_id': str(emp_a4.public_id)})
+        res_cycle = self.client.patch(
+            a4_url,
+            {'manager': str(emp_a3.public_id)},
+            format='json',
+        )
+        self.assertEqual(res_cycle.status_code, status.HTTP_400_BAD_REQUEST, res_cycle.data)
+        self.assertIn('manager', res_cycle.data)
+
+
+class EmployeeModelCleanValidationTests(TestCase):
+    """
+    Employee.clean() is the only guard for callers that bypass EmployeeSerializer
+    (Django admin, management commands, data migrations). Exercise it directly.
+    """
+
+    def setUp(self):
+        self.company_a = Company.objects.create(
+            name='Alpha Corp', registration_number='REG-MODEL-A1',
+            address='Alpha Address', contact_email='info@alpha-model.example',
+        )
+        self.company_b = Company.objects.create(
+            name='Beta Corp', registration_number='REG-MODEL-B1',
+            address='Beta Address', contact_email='info@beta-model.example',
+        )
+        self.branch_a = Branch.objects.create(company=self.company_a, name='Alpha HQ', location='NYC')
+        self.branch_b = Branch.objects.create(company=self.company_b, name='Beta HQ', location='Austin')
+        self.dept_a = Department.objects.create(branch=self.branch_a, name='Engineering')
+        self.dept_b = Department.objects.create(branch=self.branch_b, name='Operations')
+
+        def make_employee(suffix, department):
+            user = User.objects.create_user(
+                username=f'model_emp_{suffix}', password='Strong!Password#12',
+            )
+            return Employee.objects.create(
+                user=user, first_name=suffix, last_name='Model',
+                email=f'{suffix.lower()}@model.example',
+                hire_date=date(2024, 1, 1), employment_status='Active',
+                department=department,
+            )
+
+        self.emp_a1 = make_employee('A1', self.dept_a)
+        self.emp_a2 = make_employee('A2', self.dept_a)
+        self.emp_a3 = make_employee('A3', self.dept_a)
+        self.emp_b1 = make_employee('B1', self.dept_b)
+
+    def test_direct_self_reference_rejected(self):
+        self.emp_a1.manager = self.emp_a1
+        with self.assertRaises(ValidationError) as ctx:
+            self.emp_a1.full_clean()
+        self.assertIn('manager', ctx.exception.message_dict)
+
+    def test_indirect_cycle_more_than_one_level_deep_rejected(self):
+        # Chain: a2 -> a1, a3 -> a2. Closing the loop a1 -> a3 is a 3-level cycle.
+        self.emp_a2.manager = self.emp_a1
+        self.emp_a2.full_clean()
+        self.emp_a2.save()
+
+        self.emp_a3.manager = self.emp_a2
+        self.emp_a3.full_clean()
+        self.emp_a3.save()
+
+        self.emp_a1.manager = self.emp_a3
+        with self.assertRaises(ValidationError) as ctx:
+            self.emp_a1.full_clean()
+        self.assertIn('manager', ctx.exception.message_dict)
+
+    def test_cross_company_manager_rejected(self):
+        self.emp_a1.manager = self.emp_b1
+        with self.assertRaises(ValidationError) as ctx:
+            self.emp_a1.full_clean()
+        self.assertIn('manager', ctx.exception.message_dict)
+
+    def test_same_company_manager_chain_is_valid(self):
+        self.emp_a2.manager = self.emp_a1
+        self.emp_a2.full_clean()
+        self.emp_a2.save()
+
+        self.emp_a3.manager = self.emp_a2
+        self.emp_a3.full_clean()
+        self.emp_a3.save()
+
+
+class EmployeeCodeTests(TestCase):
+    """Phase 2: human-readable employee_code, auto-assigned on creation."""
+
+    def setUp(self):
+        company = Company.objects.create(
+            name='Code Corp', registration_number='REG-CODE-001',
+            address='Code Address', contact_email='info@code.example',
+        )
+        branch = Branch.objects.create(company=company, name='Code HQ', location='Remote')
+        self.department = Department.objects.create(branch=branch, name='Payroll')
+
+    def make_employee(self, suffix):
+        user = User.objects.create_user(
+            username=f'code_emp_{suffix}', password='Strong!Password#12',
+        )
+        return Employee.objects.create(
+            user=user, first_name=suffix, last_name='Code',
+            email=f'{suffix.lower()}@code.example',
+            hire_date=date(2024, 1, 1), employment_status='Active',
+            department=self.department,
+        )
+
+    def test_employee_code_assigned_on_creation(self):
+        employee = self.make_employee('A')
+        self.assertEqual(employee.employee_code, f'EMP-{employee.id:04d}')
+
+    def test_employee_code_is_unique_and_sequential(self):
+        first = self.make_employee('A')
+        second = self.make_employee('B')
+        self.assertNotEqual(first.employee_code, second.employee_code)
+        self.assertEqual(second.employee_code, f'EMP-{second.id:04d}')
+
+    def test_employee_code_is_stable_across_updates(self):
+        employee = self.make_employee('A')
+        original_code = employee.employee_code
+        employee.job_title = 'Payroll Specialist'
+        employee.save()
+        employee.refresh_from_db()
+        self.assertEqual(employee.employee_code, original_code)
+
+    def test_employee_code_exposed_via_api(self):
+        admin_role = Role.objects.create(role_name='System Admin')
+        admin = User.objects.create_user(
+            username='code-admin', password='S3cure!AdminPass#93', role=admin_role,
+        )
+        employee = self.make_employee('A')
+
+        client = APIClient()
+        client.force_authenticate(admin)
+        response = client.get(
+            reverse('employee-detail', kwargs={'public_id': str(employee.public_id)})
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data['employee_code'], employee.employee_code)
+
+
+class EmployeeResignationDateApiTests(APITestCase):
+    """Phase 5: resignation_date is required on separation, bounded by hire_date,
+    cleared on reactivation, and blocks separation while direct reports remain."""
+
+    def setUp(self):
+        self.hr_role = Role.objects.create(role_name='HR Manager')
+        self.employee_role = Role.objects.create(role_name='Employee')
+        self.hr_user = User.objects.create_user(
+            username='hr_resign', password='S3cure!AdminPass#93', role=self.hr_role,
+        )
+        company = Company.objects.create(
+            name='Resign Corp', registration_number='REG-RESIGN-01',
+            address='Resign Address', contact_email='info@resign.example',
+        )
+        branch = Branch.objects.create(company=company, name='Resign HQ', location='Remote')
+        self.department = Department.objects.create(branch=branch, name='Support')
+
+        self.user = User.objects.create_user(
+            username='leaving_emp', password='Strong!Password#12', role=self.employee_role,
+        )
+        self.employee = Employee.objects.create(
+            user=self.user, first_name='Leaving', last_name='Employee',
+            email='leaving@resign.example', hire_date=date(2024, 1, 1),
+            employment_status='Active', department=self.department,
+        )
+
+        sub_user = User.objects.create_user(
+            username='direct_report', password='Strong!Password#12', role=self.employee_role,
+        )
+        self.subordinate = Employee.objects.create(
+            user=sub_user, first_name='Direct', last_name='Report',
+            email='report@resign.example', hire_date=date(2024, 1, 1),
+            employment_status='Active', department=self.department, manager=self.employee,
+        )
+
+    def test_resignation_date_required_when_resigning(self):
+        self.client.force_authenticate(self.hr_user)
+        url = reverse('employee-detail', kwargs={'public_id': str(self.subordinate.public_id)})
+        res = self.client.patch(url, {'employment_status': 'Resigned'}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST, res.data)
+        self.assertIn('resignation_date', res.data)
+
+    def test_resignation_date_cannot_precede_hire_date(self):
+        self.client.force_authenticate(self.hr_user)
+        url = reverse('employee-detail', kwargs={'public_id': str(self.subordinate.public_id)})
+        res = self.client.patch(
+            url,
+            {'employment_status': 'Terminated', 'resignation_date': '2023-12-01'},
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST, res.data)
+        self.assertIn('resignation_date', res.data)
+
+    def test_terminating_with_valid_date_succeeds_and_is_persisted(self):
+        self.client.force_authenticate(self.hr_user)
+        url = reverse('employee-detail', kwargs={'public_id': str(self.subordinate.public_id)})
+        res = self.client.patch(
+            url,
+            {'employment_status': 'Terminated', 'resignation_date': '2026-01-15'},
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK, res.data)
+        self.assertEqual(res.data['resignation_date'], '2026-01-15')
+
+    def test_resignation_date_cleared_when_status_moves_back_to_active(self):
+        self.subordinate.employment_status = 'Terminated'
+        self.subordinate.resignation_date = date(2026, 1, 15)
+        self.subordinate.save()
+
+        self.client.force_authenticate(self.hr_user)
+        url = reverse('employee-detail', kwargs={'public_id': str(self.subordinate.public_id)})
+        res = self.client.patch(url, {'employment_status': 'Active'}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK, res.data)
+        self.assertIsNone(res.data['resignation_date'])
+
+    def test_cannot_resign_manager_with_active_direct_reports(self):
+        self.client.force_authenticate(self.hr_user)
+        url = reverse('employee-detail', kwargs={'public_id': str(self.employee.public_id)})
+        res = self.client.patch(
+            url,
+            {'employment_status': 'Resigned', 'resignation_date': '2026-01-15'},
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST, res.data)
+        self.assertIn('employment_status', res.data)
+
+    def test_resigning_succeeds_once_direct_reports_are_reassigned(self):
+        self.subordinate.manager = None
+        self.subordinate.save()
+
+        self.client.force_authenticate(self.hr_user)
+        url = reverse('employee-detail', kwargs={'public_id': str(self.employee.public_id)})
+        res = self.client.patch(
+            url,
+            {'employment_status': 'Resigned', 'resignation_date': '2026-01-15'},
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK, res.data)
+
+
+class EmployeeResignationDateModelCleanTests(TestCase):
+    """Model.clean() is the defense-in-depth guard for callers that bypass
+    EmployeeSerializer (Django admin, management commands, data migrations)."""
+
+    def setUp(self):
+        company = Company.objects.create(
+            name='Resign Model Corp', registration_number='REG-RESIGN-MODEL-01',
+            address='Resign Address', contact_email='info@resign-model.example',
+        )
+        branch = Branch.objects.create(company=company, name='Resign Model HQ', location='Remote')
+        self.department = Department.objects.create(branch=branch, name='Support')
+        user = User.objects.create_user(
+            username='resign_model_emp', password='Strong!Password#12',
+        )
+        self.employee = Employee.objects.create(
+            user=user, first_name='Resign', last_name='Model',
+            email='resign@resign-model.example', hire_date=date(2024, 1, 1),
+            employment_status='Active', department=self.department,
+        )
+
+    def test_resignation_date_required_on_full_clean(self):
+        self.employee.employment_status = 'Resigned'
+        with self.assertRaises(ValidationError) as ctx:
+            self.employee.full_clean()
+        self.assertIn('resignation_date', ctx.exception.message_dict)
+
+    def test_resignation_date_before_hire_date_rejected(self):
+        self.employee.employment_status = 'Terminated'
+        self.employee.resignation_date = date(2023, 1, 1)
+        with self.assertRaises(ValidationError) as ctx:
+            self.employee.full_clean()
+        self.assertIn('resignation_date', ctx.exception.message_dict)
+
+    def test_resignation_date_cleared_on_reactivation(self):
+        self.employee.employment_status = 'Terminated'
+        self.employee.resignation_date = date(2024, 6, 1)
+        self.employee.full_clean()
+        self.employee.save()
+
+        self.employee.employment_status = 'Active'
+        self.employee.full_clean()
+        self.assertIsNone(self.employee.resignation_date)
 

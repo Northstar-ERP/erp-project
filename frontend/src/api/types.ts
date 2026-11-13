@@ -42,6 +42,7 @@ export interface UserAccount {
 
 export interface Employee {
   public_id: string;
+  employee_code?: string | null;
   first_name: string;
   last_name: string;
   email?: string;
@@ -49,6 +50,7 @@ export interface Employee {
   hire_date?: string | null;
   job_title?: string | null;
   employment_status: string;
+  resignation_date?: string | null;
   department?: string | null;
   department_name?: string | null;
   branch?: string | null;
@@ -208,4 +210,46 @@ export interface Department {
   head?: string | null;
   head_name?: string | null;
   head_email?: string | null;
+}
+
+export interface ReviewCycle {
+  public_id: string;
+  period_type: 'QUARTERLY' | 'ANNUAL' | string;
+  period_label: string;
+  start_date: string;
+  end_date: string;
+  is_closed: boolean;
+}
+
+export interface PerformanceMetric {
+  public_id?: string;
+  metric_name: string;
+  target: string | number;
+  actual: string | number;
+  weight: number;
+}
+
+export interface Scorecard {
+  public_id: string;
+  employee: string;
+  employee_name: string;
+  cycle: string;
+  cycle_label: string;
+  reviewer?: string | null;
+  reviewer_name?: string | null;
+  goals: string;
+  rating?: number | null;
+  rating_label?: string | null;
+  status: string;
+  submitted_at?: string | null;
+  metrics?: PerformanceMetric[];
+}
+
+export interface Team {
+  public_id: string;
+  name: string;
+  department?: string;
+  department_name?: string;
+  branch_name?: string;
+  company_name?: string;
 }

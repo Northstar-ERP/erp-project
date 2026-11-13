@@ -10,6 +10,7 @@ urlpatterns = [
     path('api/analytics/', include('apps.analytics.urls')),
     path('api/leave/', include('apps.leave.urls')),
     path('api/expense/', include('apps.expense.urls')),
+    path('api/performance/', include('apps.performance.urls')),
     path('api/attendance/', include('apps.attendance.urls')),
     path('api/notifications/', include('apps.notifications.urls')),    
 ]

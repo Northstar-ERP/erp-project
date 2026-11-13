@@ -3,6 +3,9 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { client } from '../api/client';
 import { displayError } from '../components/format';
 import { Button, Card, ErrorMessage, Field, Icon } from '../components/ui';
+import Turnstile from '../components/Turnstile';
+
+const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY;
 
 export default function AccountActivationPage() {
   const params = useParams<{ token?: string }>();
@@ -28,6 +31,7 @@ export default function AccountActivationPage() {
   const [formError, setFormError] = useState('');
   const [activatedSuccess, setActivatedSuccess] = useState(false);
   const [currentYear] = useState(() => new Date().getFullYear());
+  const [turnstileToken, setTurnstileToken] = useState('');
 
   // Validate token with backend if token exists
   useEffect(() => {
@@ -108,6 +112,7 @@ export default function AccountActivationPage() {
         token: token.trim(),
         password,
         password_confirm: passwordConfirm,
+        turnstile_token: turnstileToken,
       });
 
       setActivatedSuccess(true);
@@ -315,12 +320,27 @@ export default function AccountActivationPage() {
                 )}
               </div>
 
+              {TURNSTILE_SITE_KEY && (
+                <Turnstile
+                  siteKey={TURNSTILE_SITE_KEY}
+                  onVerify={setTurnstileToken}
+                  onExpire={() => setTurnstileToken('')}
+                />
+              )}
+
               <Button
                 type="submit"
                 variant="primary"
                 size="lg"
                 className="w-full"
-                disabled={submitting || verifying || !token.trim() || !isPasswordStrong || !passwordsMatch}
+                disabled={
+                  submitting ||
+                  verifying ||
+                  !token.trim() ||
+                  !isPasswordStrong ||
+                  !passwordsMatch ||
+                  (Boolean(TURNSTILE_SITE_KEY) && !turnstileToken)
+                }
               >
                 {submitting ? (
                   <>
