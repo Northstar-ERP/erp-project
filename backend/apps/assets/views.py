@@ -15,7 +15,7 @@ from .serializers import (
     AssetHistorySerializer,
 )
 
-ASSET_MANAGER_ROLES = ['System Admin', 'IT']
+ASSET_MANAGER_ROLES = ['System Admin', 'IT', 'HR Manager']
 
 
 class AssetPermission(permissions.BasePermission):
@@ -44,7 +44,6 @@ class AssetViewSet(AuditModelViewSet):
         if role_name in [
             'Employee',
             'Department / Project Manager',
-            'HR Manager',
         ]:
             return queryset.filter(
                 allocations__employee__user=user,
@@ -53,6 +52,18 @@ class AssetViewSet(AuditModelViewSet):
             ).distinct()
 
         return queryset.none()
+
+    @transaction.atomic
+    def perform_destroy(self, instance):
+        asset = Asset.objects.select_for_update().get(pk=instance.pk)
+        if asset.status == Asset.Status.ALLOCATED or AssetAllocation.objects.filter(
+            asset=asset,
+            status=AssetAllocation.Status.ALLOCATED,
+        ).exists():
+            raise ValidationError(
+                'Return the active allocation before deleting this asset.'
+            )
+        super().perform_destroy(asset)
 
     @transaction.atomic
     def perform_update(self, serializer):
@@ -127,10 +138,34 @@ class AssetAllocationViewSet(AuditModelViewSet):
         if role_name in [
             'Employee',
             'Department / Project Manager',
-            'HR Manager',
         ]:
             return queryset.filter(employee__user=user)
         return queryset.none()
+
+    @transaction.atomic
+    def perform_create(self, serializer):
+        asset = Asset.objects.select_for_update().get(
+            pk=serializer.validated_data['asset'].pk
+        )
+        if asset.status != Asset.Status.AVAILABLE or AssetAllocation.objects.filter(
+            asset=asset,
+            status=AssetAllocation.Status.ALLOCATED,
+        ).exists():
+            raise ValidationError({
+                'asset': f"Asset '{asset.asset_name}' is not available for allocation."
+            })
+
+        allocation = serializer.save(created_by=self.request.user)
+        asset.status = Asset.Status.ALLOCATED
+        asset.save(update_fields=['status', 'updated_at'])
+        AssetHistory.objects.create(
+            asset=asset,
+            employee=allocation.employee,
+            created_by=self.request.user,
+            event_type='Allocated',
+            event_date=timezone.now(),
+            remarks=f"Asset allocated to {allocation.employee}.",
+        )
 
     @transaction.atomic
     def perform_update(self, serializer):
@@ -217,7 +252,6 @@ class AssetHistoryViewSet(AuditModelViewSet):
         if role_name in [
             'Employee',
             'Department / Project Manager',
-            'HR Manager',
         ]:
             return queryset.filter(employee__user=user)
         return queryset.none()
