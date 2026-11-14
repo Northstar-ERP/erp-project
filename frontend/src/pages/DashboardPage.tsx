@@ -506,7 +506,7 @@ export default function DashboardPage() {
           <StatTile
             label="Attendance Telemetry"
             value={`${onLeaveTodayCount} on Leave`}
-            subtext={`Backend API pending • ${activeEmployeesCount} scheduled`}
+            subtext={`            ${activeEmployeesCount} scheduled`}
             icon="clock"
             iconBg="bg-indigo-50"
             iconColor="text-indigo-700"
@@ -795,7 +795,7 @@ export default function DashboardPage() {
                     </div>
                     <p className="text-2xl font-bold text-slate-900">{activeEmployeesCount} Staff</p>
                     <p className="text-[11px] text-slate-500">
-                      {onLeaveTodayCount} on approved leave today • Clock-in API pending
+                      {onLeaveTodayCount} on approved leave today
                     </p>
                   </div>
                 </div>
@@ -1601,9 +1601,9 @@ export default function DashboardPage() {
 
               <div className="mt-3 space-y-2.5 text-xs">
                 <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-2.5 text-[11px] text-amber-900">
-                  <p className="font-semibold">Notice: Biometric API Unavailable</p>
+                  <p className="font-semibold">Attendance records available</p>
                   <p className="mt-0.5 text-amber-800">
-                    The backend attendance module (<code className="font-mono">/api/attendance/</code>) is not yet deployed. Showing verified staffing data.
+                    Open the attendance console to review verified backend timekeeping records.
                   </p>
                 </div>
 

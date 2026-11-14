@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { client, unwrapList } from '../api/client';
-import type { Department, Employee, LeaveRequest } from '../api/types';
+import type { AttendanceRecord, Department, Employee, LeaveRequest } from '../api/types';
 import { displayError, formatDate } from '../components/format';
 import { useAuth } from '../context/auth';
 import {
@@ -13,6 +13,7 @@ import {
   PageHeader,
   SearchInput,
   SelectField,
+  StatusBadge,
 } from '../components/ui';
 
 export default function AttendancePage() {
@@ -23,6 +24,7 @@ export default function AttendancePage() {
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
+  const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -39,6 +41,10 @@ export default function AttendancePage() {
         client.departments(),
         client.leaveRequests(),
       ]);
+      const attendanceRes = await client.attendance({
+        start_date: selectedDate,
+        end_date: selectedDate,
+      });
       if (empRes.status === 'fulfilled') {
         setEmployees(unwrapList(empRes.value.data));
       } else {
@@ -50,12 +56,13 @@ export default function AttendancePage() {
       if (leaveRes.status === 'fulfilled') {
         setLeaves(unwrapList(leaveRes.value.data));
       }
+      setAttendance(unwrapList(attendanceRes.data));
     } catch (cause) {
       setError(displayError(cause));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedDate]);
 
   useEffect(() => {
     void Promise.resolve().then(load);
@@ -113,28 +120,25 @@ export default function AttendancePage() {
 
       {error && <ErrorMessage>{error}</ErrorMessage>}
 
-      {/* Backend Limitation Notice Banner */}
-      <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-5 text-amber-950 shadow-xs">
+      <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 p-5 text-emerald-950 shadow-xs">
         <div className="flex items-start gap-3.5">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-800">
-            <Icon name="clock" size={20} />
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800">
+            <Icon name="check-circle" size={20} />
           </span>
           <div className="space-y-1.5 text-xs">
-            <h3 className="font-bold text-amber-900 text-sm">
-              Backend Notice: Attendance API Not Implemented
+            <h3 className="font-bold text-emerald-900 text-sm">
+              Attendance records synchronized
             </h3>
-            <p className="leading-relaxed text-amber-800">
-              The Northstar ERP backend currently does not provide an Attendance module or endpoints
-              (such as <code className="rounded bg-amber-100/80 px-1 py-0.5 font-mono text-[11px]">/api/attendance/</code>).
-              In accordance with enterprise data integrity standards, no artificial or simulated attendance records are generated.
+            <p className="leading-relaxed text-emerald-800">
+              Showing verified attendance records from the backend for {formatDate(selectedDate)}.
             </p>
-            <div className="mt-2 grid gap-1.5 sm:grid-cols-2 text-[11px] text-amber-900 font-medium">
+            <div className="mt-2 grid gap-1.5 sm:grid-cols-2 text-[11px] text-emerald-900 font-medium">
               <div className="flex items-center gap-1.5">
-                <Icon name="check-circle" size={13} className="text-amber-700" />
+                <Icon name="check-circle" size={13} className="text-emerald-700" />
                 <span>Verified workforce headcount: {activeEmployees.length} active employees</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <Icon name="check-circle" size={13} className="text-amber-700" />
+                <Icon name="check-circle" size={13} className="text-emerald-700" />
                 <span>Synchronized approved leave: {leavesOnSelectedDate.length} on leave for {formatDate(selectedDate)}</span>
               </div>
             </div>
@@ -186,8 +190,8 @@ export default function AttendancePage() {
               <Icon name="clock" size={20} />
             </span>
             <div>
-              <p className="text-sm font-bold text-slate-700">API Pending</p>
-              <p className="text-xs font-medium text-slate-500">Biometric / Web Clock-in</p>
+              <p className="text-2xl font-bold text-slate-900">{attendance.length}</p>
+              <p className="text-xs font-medium text-slate-500">Attendance Records</p>
             </div>
           </div>
         </Card>
@@ -258,7 +262,7 @@ export default function AttendancePage() {
                   <th className="px-5 py-3">Department</th>
                   <th className="px-5 py-3">Designation</th>
                   <th className="px-5 py-3">Leave Calendar Status</th>
-                  <th className="px-5 py-3">Timekeeping Telemetry</th>
+                  <th className="px-5 py-3">Timekeeping Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700">
@@ -267,6 +271,12 @@ export default function AttendancePage() {
                     (l) =>
                       l.employee_name === `${emp.first_name} ${emp.last_name}` ||
                       String(l.employee) === String(emp.public_id),
+                  );
+
+                  const record = attendance.find(
+                    (item) =>
+                      item.employee_name === `${emp.first_name} ${emp.last_name}` ||
+                      String(item.employee) === String(emp.public_id),
                   );
 
                   return (
@@ -296,8 +306,28 @@ export default function AttendancePage() {
                           </span>
                         )}
                       </td>
-                      <td className="px-5 py-3.5 text-slate-400 text-[11px] font-mono italic">
-                        Endpoint unavailable (/api/attendance/)
+                      <td className="px-5 py-3.5">
+                        {record ? (
+                          <div className="space-y-1">
+                            <StatusBadge status={record.status} />
+                            <p className="text-[11px] text-slate-500">
+                              {record.check_in
+                                ? `In ${new Date(record.check_in).toLocaleTimeString([], {
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })}`
+                                : 'No check-in recorded'}
+                              {record.check_out
+                                ? ` · Out ${new Date(record.check_out).toLocaleTimeString([], {
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })}`
+                                : ''}
+                            </p>
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-slate-500">No record for this date</span>
+                        )}
                       </td>
                     </tr>
                   );
@@ -308,28 +338,27 @@ export default function AttendancePage() {
         )}
       </Card>
 
-      {/* Integration Roadmap Specification */}
       <Card className="p-5">
         <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 mb-3">
-          Planned Attendance Endpoints & Capabilities
+          Attendance tracking
         </h3>
         <div className="grid gap-3 sm:grid-cols-3 text-xs">
           <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3.5">
             <p className="font-bold text-slate-900">Daily Punch Logs</p>
             <p className="mt-1 text-[11px] text-slate-500 leading-relaxed">
-              Will ingest clock-in, clock-out, break intervals, and geo/device authentication when backend introduces <code className="text-slate-800 font-mono">/api/attendance/logs/</code>.
+              Attendance records include check-in and check-out timestamps from the backend timekeeping service.
             </p>
           </div>
           <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3.5">
             <p className="font-bold text-slate-900">Status & Anomaly Engine</p>
             <p className="mt-1 text-[11px] text-slate-500 leading-relaxed">
-              Automated classification into Present, Late, Absent, Half-Day, and flags for unexcused or missing check-outs.
+              Records are classified as Present, Late, Absent, or Half-Day by the backend.
             </p>
           </div>
           <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3.5">
             <p className="font-bold text-slate-900">HR Correction Audit</p>
             <p className="mt-1 text-[11px] text-slate-500 leading-relaxed">
-              Authorized HR Managers will submit timestamp corrections with mandatory audit reasons and supervisor sign-off.
+              Attendance data remains read-only in this view and follows the backend audit trail.
             </p>
           </div>
         </div>

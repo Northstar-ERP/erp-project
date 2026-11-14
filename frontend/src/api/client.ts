@@ -1,6 +1,7 @@
 import api from './axios';
 import type {
   ApiListResponse,
+  AttendanceRecord,
   Asset,
   AssetAllocation,
   AssetHistory,
@@ -48,6 +49,7 @@ export const endpoints = {
   branches: 'organization/branches/',
   departments: 'organization/departments/',
   teams: 'organization/teams/',
+  attendance: 'attendance/',
   invite: 'users/invite/',
   activate: 'users/activate/',
   reviewCycles: 'performance/cycles/',
@@ -193,6 +195,14 @@ export const client = {
     api.patch<Department>(`${endpoints.departments}${publicId}/`, data),
 
   teams: () => api.get<ApiListResponse<Team>>(endpoints.teams),
+
+  // Attendance
+  attendance: (params?: { start_date?: string; end_date?: string }) =>
+    api.get<ApiListResponse<AttendanceRecord>>(endpoints.attendance, { params }),
+  attendanceSummary: (params?: { start_date?: string; end_date?: string }) =>
+    api.get<Record<string, number>>(`${endpoints.attendance}summary/`, { params }),
+  checkIn: () => api.post<AttendanceRecord>(`${endpoints.attendance}check-in/`),
+  checkOut: () => api.post<AttendanceRecord>(`${endpoints.attendance}check-out/`),
 
   // Performance Management
   reviewCycles: () =>

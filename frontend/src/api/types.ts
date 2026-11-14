@@ -151,6 +151,21 @@ export interface LeaveRequest {
   created_at?: string;
 }
 
+export interface AttendanceRecord {
+  id: number;
+  employee: string | number;
+  employee_name: string;
+  work_date: string;
+  check_in?: string | null;
+  check_out?: string | null;
+  status: string;
+  notes?: string;
+  worked_minutes?: number | null;
+  created_by?: string | number | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface ExpenseCategory {
   public_id: string;
   name: string;
