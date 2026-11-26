@@ -38,9 +38,11 @@ export type IconName =
   | 'trash'
   | 'download'
   | 'panel-left'
-  | 'help';
+  | 'help'
+  | 'chart';
 
 const iconPaths: Record<IconName, ReactNode> = {
+  chart: <><path d="M3 3v18h18" /><path d="M7 15l4-4 3 3 5-6" /></>,
   grid: <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /></>,
   building: <><path d="M3 21h18M5 21V5l7-2v18M19 21V9l-7-2" /><path d="M8 7h1m-1 4h1m-1 4h1m7-2h1m-1 4h1" /></>,
   briefcase: <><rect x="3" y="7" width="18" height="14" rx="2" /><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12h18m-11 0v2h4v-2" /></>,

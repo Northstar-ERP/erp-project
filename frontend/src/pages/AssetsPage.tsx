@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { client, unwrapList } from '../api/client';
 import type { Asset, AssetAllocation, AssetHistory, Employee } from '../api/types';
-import { displayError, formatDate } from '../components/format';
+import { displayError, formatDate, toLocalISODate } from '../components/format';
 import { useAuth } from '../context/auth';
 import {
   Button,
@@ -35,6 +35,11 @@ export default function AssetsPage() {
       user?.role_name === 'HR Manager' ||
       hasRole(['System Admin', 'IT', 'HR Manager']),
   );
+  const isPM =
+    user?.role_name === 'Department / Project Manager' ||
+    hasRole(['Department / Project Manager']);
+  // Managers can return (deallocate) devices held by their direct reports.
+  const canDeallocate = canManageAssets || isPM;
 
   const [tab, setTab] = useState<Tab>('inventory');
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -62,7 +67,7 @@ export default function AssetsPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
 
-  const [today] = useState(() => new Date().toISOString().slice(0, 10));
+  const [today] = useState(() => toLocalISODate());
 
   const load = useCallback(async () => {
     try {
@@ -593,7 +598,7 @@ export default function AssetsPage() {
                       <th className="px-5 py-3">Allocation Date</th>
                       <th className="px-5 py-3">Return Date</th>
                       <th className="px-5 py-3">Status</th>
-                      {canManageAssets && <th className="px-5 py-3 text-right">Actions</th>}
+                      {canDeallocate && <th className="px-5 py-3 text-right">Actions</th>}
                     </tr>
                   ) : (
                     <tr>
@@ -743,9 +748,12 @@ export default function AssetsPage() {
                           <td className="px-5 py-3.5">
                             <StatusBadge status={allocation.status} />
                           </td>
-                          {canManageAssets && (
+                          {canDeallocate && (
                             <td className="px-5 py-3.5 text-right">
-                              {isAllocated ? (
+                              {isAllocated &&
+                              (canManageAssets ||
+                                (Boolean(user?.employee_public_id) &&
+                                  emp?.manager === user?.employee_public_id)) ? (
                                 <Button
                                   size="sm"
                                   variant="secondary"
@@ -754,6 +762,8 @@ export default function AssetsPage() {
                                 >
                                   Return Asset
                                 </Button>
+                              ) : isAllocated ? (
+                                <span className="text-[11px] text-slate-400">—</span>
                               ) : (
                                 <span className="text-[11px] text-slate-400">Restored</span>
                               )}

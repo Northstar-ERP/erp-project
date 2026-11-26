@@ -19,8 +19,21 @@ export const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
+// The access token lives only in memory. The refresh token is kept in
+// sessionStorage so a page reload can restore the session; it is cleared when
+// the tab is closed and is never shared with other tabs.
+const REFRESH_STORAGE_KEY = 'erp.refresh';
+
+function readStoredRefreshToken(): string | null {
+  try {
+    return window.sessionStorage.getItem(REFRESH_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
 let accessToken: string | null = null;
-let refreshToken: string | null = null;
+let refreshToken: string | null = readStoredRefreshToken();
 let refreshInFlight: Promise<string> | null = null;
 
 export function setAccessToken(token: string | null): void {
@@ -35,6 +48,15 @@ export function setAccessToken(token: string | null): void {
 
 export function setRefreshToken(token: string | null): void {
   refreshToken = token;
+  try {
+    if (token) {
+      window.sessionStorage.setItem(REFRESH_STORAGE_KEY, token);
+    } else {
+      window.sessionStorage.removeItem(REFRESH_STORAGE_KEY);
+    }
+  } catch {
+    // Storage unavailable (e.g. privacy mode): fall back to memory only.
+  }
 }
 
 export function getAccessToken(): string | null {

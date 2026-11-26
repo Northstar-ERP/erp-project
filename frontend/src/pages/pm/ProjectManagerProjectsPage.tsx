@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { client, unwrapList } from '../../api/client';
+import { isProjectAssignable } from '../../utils/managers';
 import type { Employee, Project, Task } from '../../api/types';
 import { displayError, formatDate } from '../../components/format';
 import CreateProjectWizard from './CreateProjectWizard';
@@ -938,7 +939,7 @@ export default function ProjectManagerProjectsPage() {
             <div className="grid gap-3.5 sm:grid-cols-2">
               <SelectField label="Assignee Team Member" name="assigned_to" defaultValue="">
                 <option value="">Unassigned</option>
-                {employees.map((emp) => (
+                {employees.filter(isProjectAssignable).map((emp) => (
                   <option key={emp.public_id} value={emp.public_id}>
                     {emp.first_name} {emp.last_name} ({emp.department_name || 'Staff'})
                   </option>

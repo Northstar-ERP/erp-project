@@ -106,26 +106,42 @@ def invalidate_role_cache(role_names: List[str], resource: str = None) -> int:
         return 0
 
 
+def _model_cache_enabled() -> bool:
+    from django.conf import settings
+    return getattr(settings, 'MODEL_CACHE_ENABLED', True)
+
+
 class CacheableModelMixin:
     """
     Mixin for ViewSets to add automatic caching with invalidation.
+
+    Set ``cache_per_user = True`` on viewsets whose get_queryset() returns
+    different rows for different users, so one user's results are never
+    served to another.
     """
     cache_ttl = MASTER_DATA_TTL
     cache_actions = ['list', 'retrieve']
+    cache_per_user = False
+
+    def _cache_model(self):
+        return self.get_queryset().model
 
     def _get_cache_key_for_action(self, action: str) -> Optional[str]:
         """Generate cache key for the current request (including pagination & query params)."""
+        scope = {}
+        if self.cache_per_user:
+            scope['user'] = getattr(self.request.user, 'pk', None)
         if action == 'list':
             params = {k: v for k, v in self.request.query_params.items()}
-            return get_model_cache_key(self.queryset.model, 'list', **params)
+            return get_model_cache_key(self._cache_model(), 'list', **params, **scope)
         elif action == 'retrieve':
             lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
             pk = self.kwargs.get(lookup_url_kwarg) or self.kwargs.get('pk')
-            return get_model_cache_key(self.queryset.model, 'retrieve', pk=pk)
+            return get_model_cache_key(self._cache_model(), 'retrieve', pk=pk, **scope)
         return None
 
     def list(self, request, *args, **kwargs):
-        if 'list' not in self.cache_actions:
+        if 'list' not in self.cache_actions or not _model_cache_enabled():
             return super().list(request, *args, **kwargs)
 
         cache_key = self._get_cache_key_for_action('list')
@@ -140,7 +156,7 @@ class CacheableModelMixin:
         return response
 
     def retrieve(self, request, *args, **kwargs):
-        if 'retrieve' not in self.cache_actions:
+        if 'retrieve' not in self.cache_actions or not _model_cache_enabled():
             return super().retrieve(request, *args, **kwargs)
 
         cache_key = self._get_cache_key_for_action('retrieve')
@@ -156,7 +172,7 @@ class CacheableModelMixin:
 
     def _invalidate_model_cache(self):
         """Invalidate all cache entries for this model."""
-        invalidate_model_cache(self.queryset.model)
+        invalidate_model_cache(self._cache_model())
 
     def perform_create(self, serializer):
         instance = super().perform_create(serializer)

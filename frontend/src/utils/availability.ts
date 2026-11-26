@@ -1,4 +1,5 @@
 import type { Employee, LeaveRequest, Task } from '../api/types';
+import { toLocalISODate } from '../components/format';
 
 export type AvailabilityStatus = 'Available' | 'Busy' | 'On Leave' | 'Unavailable' | 'Unknown';
 
@@ -106,7 +107,7 @@ export function calculateEmployeeAvailability(
     const primaryLeave = approvedLeaves[0];
     const nextFree = new Date(`${primaryLeave.end_date}T00:00:00`);
     nextFree.setDate(nextFree.getDate() + 1);
-    const nextFreeStr = nextFree.toISOString().slice(0, 10);
+    const nextFreeStr = toLocalISODate(nextFree);
 
     return {
       status: 'On Leave',
@@ -137,7 +138,7 @@ export function calculateEmployeeAvailability(
     if (latestDeadline) {
       const nextDate = new Date(`${latestDeadline}T00:00:00`);
       nextDate.setDate(nextDate.getDate() + 1);
-      upcomingDate = nextDate.toISOString().slice(0, 10);
+      upcomingDate = toLocalISODate(nextDate);
     }
 
     const reason =

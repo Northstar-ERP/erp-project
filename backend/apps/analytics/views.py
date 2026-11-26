@@ -1,7 +1,7 @@
 
 from django.db.models.functions import TruncMonth
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from apps.utils.permissions import IsSystemAdminOrHRManager
 from rest_framework.response import Response
 
 from apps.projects.models import Project, Task
@@ -16,7 +16,7 @@ from apps.leave.models import LeaveRequest, LeaveBalance
 
 
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsSystemAdminOrHRManager])
 def dashboard_summary(request):
     # Current totals
     totals = {

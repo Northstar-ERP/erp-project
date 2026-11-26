@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { client, unwrapList } from '../api/client';
 import type { Branch, Company, Department, Employee, Role } from '../api/types';
-import { displayError, formatDate } from '../components/format';
+import { displayError, formatDate, toLocalISODate } from '../components/format';
 import { OrgHierarchySelect } from '../components/OrgHierarchySelect';
 import { useAuth } from '../context/auth';
 import {
@@ -110,7 +110,7 @@ export default function OrganizationPage() {
   });
   const [editManager, setEditManager] = useState('');
 
-  const [today] = useState(() => new Date().toISOString().slice(0, 10));
+  const [today] = useState(() => toLocalISODate());
 
   const load = useCallback(async () => {
     try {

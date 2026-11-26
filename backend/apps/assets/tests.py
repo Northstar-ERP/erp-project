@@ -514,3 +514,71 @@ class AssetApiTests(APITestCase):
         )
         self.owned_asset.refresh_from_db()
         self.assertEqual(self.owned_asset.status, Asset.Status.ALLOCATED)
+
+
+class ManagerDeallocationTests(APITestCase):
+    """A Department / Project Manager may return devices held by direct reports only."""
+
+    def setUp(self):
+        pm_role = Role.objects.create(role_name='Department / Project Manager')
+        employee_role = Role.objects.create(role_name='Employee')
+        self.pm_user = User.objects.create_user('pm', password='N3w!StrongPassword85', role=pm_role)
+        report_user = User.objects.create_user('report', password='N3w!StrongPassword85', role=employee_role)
+        outsider_user = User.objects.create_user('outsider', password='N3w!StrongPassword85', role=employee_role)
+        self.pm = self.make_employee(self.pm_user, 'Pat', 'Manager', 'pm@example.com')
+        self.report = self.make_employee(report_user, 'Riley', 'Report', 'riley@example.com', manager=self.pm)
+        self.outsider = self.make_employee(outsider_user, 'Olive', 'Outsider', 'olive@example.com')
+
+        self.report_asset = Asset.objects.create(
+            asset_name='Report Laptop', category='Laptop', serial_number='PM-1', status=Asset.Status.ALLOCATED,
+        )
+        self.outsider_asset = Asset.objects.create(
+            asset_name='Outsider Laptop', category='Laptop', serial_number='PM-2', status=Asset.Status.ALLOCATED,
+        )
+        self.report_alloc = AssetAllocation.objects.create(
+            asset=self.report_asset, employee=self.report, allocation_date=date(2026, 1, 10),
+        )
+        self.outsider_alloc = AssetAllocation.objects.create(
+            asset=self.outsider_asset, employee=self.outsider, allocation_date=date(2026, 1, 10),
+        )
+        self.client.force_authenticate(self.pm_user)
+
+    def make_employee(self, user, first, last, email, manager=None):
+        return Employee.objects.create(
+            user=user, first_name=first, last_name=last, email=email,
+            hire_date=date(2024, 1, 15), manager=manager,
+        )
+
+    def url(self, allocation):
+        return reverse('asset-allocation-detail', kwargs={'public_id': str(allocation.public_id)})
+
+    def test_manager_sees_direct_reports_allocations_and_assets(self):
+        allocations = self.client.get(reverse('asset-allocation-list')).data
+        self.assertEqual([a['public_id'] for a in allocations], [str(self.report_alloc.public_id)])
+        assets = self.client.get(reverse('asset-list')).data
+        self.assertEqual([a['public_id'] for a in assets], [str(self.report_asset.public_id)])
+
+    def test_manager_can_return_direct_reports_device(self):
+        response = self.client.patch(
+            self.url(self.report_alloc), {'status': 'Returned', 'return_date': '2026-02-01'}, format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.report_asset.refresh_from_db()
+        self.assertEqual(self.report_asset.status, Asset.Status.AVAILABLE)
+        self.assertTrue(AssetHistory.objects.filter(asset=self.report_asset, event_type='Returned').exists())
+
+    def test_manager_cannot_return_outsiders_device(self):
+        response = self.client.patch(self.url(self.outsider_alloc), {'status': 'Returned'}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_manager_cannot_edit_other_allocation_fields_or_create_assets(self):
+        response = self.client.patch(
+            self.url(self.report_alloc), {'allocation_date': '2026-01-01'}, format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        response = self.client.post(
+            reverse('asset-list'), {'asset_name': 'X', 'category': 'Y'}, format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        response = self.client.delete(self.url(self.report_alloc))
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)

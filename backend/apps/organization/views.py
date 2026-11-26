@@ -6,7 +6,7 @@ from .models import Company, Branch, Department, Team
 from .serializers import CompanySerializer, BranchSerializer, DepartmentSerializer, TeamSerializer
 from apps.utils.permissions import IsSystemAdminOrHRManager
 from apps.utils.views import AuditModelViewSet
-from apps.utils.cache import CacheableModelMixin, MASTER_DATA_TTL
+from apps.utils.cache import CacheableModelMixin, MASTER_DATA_TTL, invalidate_model_cache
 
 
 class CompanyViewSet(CacheableModelMixin, AuditModelViewSet):
@@ -32,6 +32,9 @@ class CompanyViewSet(CacheableModelMixin, AuditModelViewSet):
         Team.objects.filter(department__branch__company=instance).delete()
         Department.objects.filter(branch__company=instance).delete()
         Branch.objects.filter(company=instance).delete()
+        invalidate_model_cache(Branch)
+        invalidate_model_cache(Department)
+        invalidate_model_cache(Team)
         super().perform_destroy(instance)
 
 
@@ -41,6 +44,25 @@ class BranchViewSet(CacheableModelMixin, AuditModelViewSet):
     permission_classes = [IsSystemAdminOrHRManager]
     cache_ttl = MASTER_DATA_TTL
     cache_actions = ['list', 'retrieve']
+
+    @transaction.atomic
+    def perform_destroy(self, instance):
+        if Employee.objects.filter(
+            department__branch=instance,
+            is_deleted=False,
+        ).exists():
+            raise ValidationError({
+                'detail': (
+                    f"Cannot delete branch '{instance.name}' while it still has assigned "
+                    "employees. Please reassign or remove employees first."
+                )
+            })
+
+        Team.objects.filter(department__branch=instance).delete()
+        Department.objects.filter(branch=instance).delete()
+        invalidate_model_cache(Department)
+        invalidate_model_cache(Team)
+        super().perform_destroy(instance)
 
 
 class DepartmentViewSet(CacheableModelMixin, AuditModelViewSet):

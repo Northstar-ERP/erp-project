@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import api from '../../api/axios';
-import { endpoints, unwrapList } from '../../api/client';
-import type { ApiListResponse, Expense, LeaveRequest } from '../../api/types';
+import { client, endpoints, unwrapList } from '../../api/client';
+import type { ApiListResponse, AppNotification, Expense, LeaveRequest } from '../../api/types';
 import { useAuth } from '../../context/auth';
 import { initials } from '../format';
 import { Button, Icon, Modal, type IconName } from '../ui';
@@ -24,7 +24,7 @@ const adminNavGroups: NavGroup[] = [
     group: 'Overview',
     items: [
       { to: '/dashboard', label: 'Dashboard', icon: 'grid' },
-      { to: '/analytics', label: 'Analytics', icon: 'grid' },
+      { to: '/analytics', label: 'Analytics', icon: 'chart' },
     ],
   },
   {
@@ -52,6 +52,7 @@ const hrNavGroups: NavGroup[] = [
     group: 'Overview',
     items: [
       { to: '/dashboard', label: 'Dashboard', icon: 'grid' },
+      { to: '/analytics', label: 'Analytics', icon: 'chart' },
     ],
   },
   {
@@ -97,8 +98,7 @@ const employeeNavGroups: NavGroup[] = [
     group: 'Workspace & Deliverables',
     items: [
       { to: '#profile', label: 'My Profile', icon: 'user' },
-      { to: '/projects', label: 'My Tasks', icon: 'check-circle' },
-      { to: '/projects', label: 'My Projects', icon: 'briefcase' },
+      { to: '/projects', label: 'My Projects & Tasks', icon: 'briefcase' },
       { to: '/leave', label: 'My Leave', icon: 'calendar' },
       { to: '/attendance', label: 'My Attendance', icon: 'clock' },
       { to: '/expenses', label: 'My Expenses', icon: 'receipt' },
@@ -122,6 +122,7 @@ export default function Layout() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [pendingLeaves, setPendingLeaves] = useState<number | null>(null);
   const [pendingExpenses, setPendingExpenses] = useState<number | null>(null);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
 
   const userMenuRef = useRef<HTMLDivElement>(null);
   const notifMenuRef = useRef<HTMLDivElement>(null);
@@ -150,6 +151,8 @@ export default function Layout() {
 
   // Compute page title from route
   const currentTitle = useMemo(() => {
+    if (location.pathname === '/dashboard') return 'Dashboard';
+    if (location.pathname === '/analytics') return 'Analytics';
     if (location.pathname === '/admin/managers') return 'Managers';
     if (location.pathname === '/admin/organizations') return 'Organizations';
     if (location.pathname === '/admin/branches') return 'Branches';
@@ -204,6 +207,40 @@ export default function Layout() {
   }, [location.pathname]);
 
   const totalPending = isAdmin ? (pendingExpenses ?? 0) : (pendingLeaves ?? 0) + (pendingExpenses ?? 0);
+
+  // In-app notifications from the backend (leave decisions, task assignments, deadlines…)
+  useEffect(() => {
+    let active = true;
+    client
+      .notifications()
+      .then(({ data }) => {
+        if (active) setNotifications(unwrapList(data));
+      })
+      .catch(() => {
+        // Non-critical: the bell simply shows no notifications.
+      });
+    return () => {
+      active = false;
+    };
+  }, [location.pathname]);
+
+  const unreadCount = notifications.filter((n) => !n.is_read).length;
+
+  const openNotification = (notification: AppNotification) => {
+    setNotificationsOpen(false);
+    if (!notification.is_read) {
+      setNotifications((prev) =>
+        prev.map((n) => (n.public_id === notification.public_id ? { ...n, is_read: true } : n)),
+      );
+      void client.markNotificationRead(notification.public_id).catch(() => undefined);
+    }
+    if (notification.link) navigate(notification.link);
+  };
+
+  const markAllRead = () => {
+    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+    void client.markAllNotificationsRead().catch(() => undefined);
+  };
 
   const handleLogout = () => {
     logout();
@@ -293,7 +330,7 @@ export default function Layout() {
 
                   return (
                     <NavLink
-                      key={item.to}
+                      key={`${item.to}-${item.label}`}
                       to={item.to}
                       onClick={() => setMobileNavOpen(false)}
                       title={collapsed ? item.label : undefined}
@@ -469,15 +506,57 @@ export default function Layout() {
                 aria-expanded={notificationsOpen}
               >
                 <Icon name="bell" size={16} />
-                {totalPending > 0 && (
-                  <span className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-blue-600 text-[9px] font-bold text-white ring-2 ring-white">
-                    {totalPending > 9 ? '9+' : totalPending}
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-rose-600 text-[9px] font-bold text-white ring-2 ring-white">
+                    {unreadCount > 9 ? '9+' : unreadCount}
                   </span>
                 )}
               </button>
 
               {notificationsOpen && (
                 <div className="absolute right-0 top-11 z-30 w-80 rounded-xl border border-slate-200 bg-white p-4 shadow-xl">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                    <p className="text-xs font-bold text-slate-900 uppercase tracking-wide">Notifications</p>
+                    {unreadCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={markAllRead}
+                        className="text-[10px] font-semibold text-blue-700 hover:underline"
+                      >
+                        Mark all read
+                      </button>
+                    )}
+                  </div>
+                  <div className="mt-2 mb-4 max-h-64 space-y-1 overflow-y-auto">
+                    {notifications.length === 0 ? (
+                      <p className="py-3 text-center text-[11px] text-slate-400">You're all caught up.</p>
+                    ) : (
+                      notifications.slice(0, 10).map((n) => (
+                        <button
+                          key={n.public_id}
+                          type="button"
+                          onClick={() => openNotification(n)}
+                          className={`block w-full rounded-lg px-2.5 py-2 text-left transition hover:bg-slate-100 ${
+                            n.is_read ? '' : 'bg-blue-50/70'
+                          }`}
+                        >
+                          <span className="flex items-center gap-1.5">
+                            {!n.is_read && <span className="size-1.5 shrink-0 rounded-full bg-blue-600" />}
+                            <span className="text-[11px] font-semibold text-slate-900">{n.title}</span>
+                          </span>
+                          <span className="mt-0.5 block text-[11px] leading-snug text-slate-600">{n.message}</span>
+                          <span className="mt-0.5 block text-[10px] text-slate-400">
+                            {new Date(n.created_at).toLocaleString('en-IN', {
+                              day: 'numeric',
+                              month: 'short',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                        </button>
+                      ))
+                    )}
+                  </div>
                   <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
                     <p className="text-xs font-bold text-slate-900 uppercase tracking-wide">
                       {isAdmin ? 'System Notifications' : 'Approval Queue'}

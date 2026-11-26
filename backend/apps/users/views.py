@@ -25,7 +25,7 @@ from apps.utils.permissions import (
     IsSystemAdminOrHRManager,
 )
 from apps.utils.views import AuditModelViewSet
-from apps.utils.cache import CacheableModelMixin, MASTER_DATA_TTL
+from apps.utils.cache import CacheableModelMixin, MASTER_DATA_TTL, invalidate_model_cache
 
 logger = logging.getLogger(__name__)
 
@@ -40,10 +40,23 @@ class RefreshThrottledView(TokenRefreshView):
     throttle_classes = [LoginRateThrottle]
 
 
+class RolePermission(permissions.BasePermission):
+    """Read access for authenticated users; management access for System Admins."""
+
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        return request.user.is_superuser or (
+            request.user.role and request.user.role.role_name == 'System Admin'
+        )
+
+
 class RoleViewSet(CacheableModelMixin, AuditModelViewSet):
     queryset = Role.objects.select_related('created_by').all()
     serializer_class = RoleSerializer
-    permission_classes = [IsSystemAdmin]
+    permission_classes = [RolePermission]
     cache_ttl = MASTER_DATA_TTL
     cache_actions = ['list', 'retrieve']
 
@@ -114,6 +127,29 @@ class EmployeeViewSet(AuditModelViewSet):
         if self.action in ['list', 'retrieve']:
             return [permissions.IsAuthenticated()]
         return [IsSystemAdminOrHRManager()]
+
+    @transaction.atomic
+    def perform_destroy(self, instance):
+        """Soft-delete the employee and clean up everything that points at them."""
+        if instance.user_id == self.request.user.id:
+            raise ValidationError({'detail': 'You cannot delete your own employee record.'})
+
+        from apps.organization.models import Branch, Department
+
+        Branch.objects.filter(manager=instance).update(manager=None)
+        Department.objects.filter(head=instance).update(head=None)
+        Employee.objects.filter(manager=instance).update(manager=None)
+        invalidate_model_cache(Branch)
+        invalidate_model_cache(Department)
+
+        user = instance.user
+        if user is not None:
+            user.is_active = False
+            user.is_deleted = True
+            user.save(update_fields=['is_active', 'is_deleted', 'updated_at'])
+            invalidate_model_cache(User)
+
+        instance.delete()
 
     @action(detail=False, methods=['get'], url_path='me', permission_classes=[permissions.IsAuthenticated])
     def me(self, request):

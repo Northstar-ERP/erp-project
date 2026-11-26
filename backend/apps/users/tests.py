@@ -623,3 +623,73 @@ class EmployeeHierarchyValidationTests(APITestCase):
 
 
 
+
+
+class EmployeeDeleteCleanupTests(APITestCase):
+    """Deleting an employee (e.g. a manager) cleans up every reference to them."""
+
+    def setUp(self):
+        from apps.organization.models import Branch, Company, Department
+
+        admin_role = Role.objects.create(role_name='System Admin')
+        pm_role = Role.objects.create(role_name='Department / Project Manager')
+        emp_role = Role.objects.create(role_name='Employee')
+        company = Company.objects.create(
+            name='Acme', registration_number='R-1', address='Pune', contact_email='a@acme.test',
+        )
+        self.branch = Branch.objects.create(company=company, name='HQ', location='Pune')
+        self.dept = Department.objects.create(branch=self.branch, name='Eng')
+
+        self.admin_user = User.objects.create_user('del-admin', password='N3w!StrongPassword85', role=admin_role)
+        mgr_user = User.objects.create_user('del-mgr', password='N3w!StrongPassword85', role=pm_role)
+        sub_user = User.objects.create_user('del-sub', password='N3w!StrongPassword85', role=emp_role)
+        self.admin_emp = Employee.objects.create(
+            user=self.admin_user, first_name='Ad', last_name='Min', email='ad@acme.test',
+            hire_date='2024-01-01', department=self.dept,
+        )
+        self.manager = Employee.objects.create(
+            user=mgr_user, first_name='Mo', last_name='Mgr', email='mo@acme.test',
+            hire_date='2024-01-01', department=self.dept,
+        )
+        self.sub = Employee.objects.create(
+            user=sub_user, first_name='Su', last_name='Sub', email='su@acme.test',
+            hire_date='2024-01-01', department=self.dept, manager=self.manager,
+        )
+        self.branch.manager = self.manager
+        self.branch.save()
+        self.dept.head = self.manager
+        self.dept.save()
+
+    def url(self, emp):
+        return f'/api/users/employees/{emp.public_id}/'
+
+    def test_admin_deletes_manager_and_references_are_cleared(self):
+        self.client.force_authenticate(self.admin_user)
+        response = self.client.delete(self.url(self.manager))
+        self.assertEqual(response.status_code, 204, getattr(response, 'data', None))
+
+        self.manager.refresh_from_db()
+        self.branch.refresh_from_db()
+        self.dept.refresh_from_db()
+        self.sub.refresh_from_db()
+        user = User.all_objects.get(pk=self.manager.user_id)
+        self.assertTrue(self.manager.is_deleted)
+        self.assertFalse(user.is_active)
+        self.assertTrue(user.is_deleted)
+        self.assertIsNone(self.branch.manager_id)
+        self.assertIsNone(self.dept.head_id)
+        self.assertIsNone(self.sub.manager_id)
+
+    def test_deleted_manager_can_no_longer_log_in(self):
+        self.client.force_authenticate(self.admin_user)
+        self.client.delete(self.url(self.manager))
+        self.client.force_authenticate(None)
+        response = self.client.post(
+            '/api/users/auth/token/', {'username': 'del-mgr', 'password': 'N3w!StrongPassword85'}, format='json',
+        )
+        self.assertEqual(response.status_code, 401)
+
+    def test_cannot_delete_own_employee_record(self):
+        self.client.force_authenticate(self.admin_user)
+        response = self.client.delete(self.url(self.admin_emp))
+        self.assertEqual(response.status_code, 400)

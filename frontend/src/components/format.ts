@@ -121,3 +121,28 @@ export function formatDate(value?: string | null): string {
     ? value
     : new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' }).format(date);
 }
+
+const inrFormatter = new Intl.NumberFormat('en-IN', {
+  style: 'currency',
+  currency: 'INR',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+/** Format an amount as Indian Rupees, e.g. ₹1,25,000.00 */
+export function formatINR(value: number | string | null | undefined): string {
+  const amount = Number(value);
+  return inrFormatter.format(Number.isFinite(amount) ? amount : 0);
+}
+
+/**
+ * YYYY-MM-DD for a date in the user's local time zone.
+ * (`toISOString()` converts to UTC first, which yields the previous day for
+ * local midnights in time zones ahead of UTC, such as IST.)
+ */
+export function toLocalISODate(date: Date = new Date()): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}

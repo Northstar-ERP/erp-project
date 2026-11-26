@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { client, unwrapList } from '../../api/client';
 import type { Employee, LeaveRequest, Project, Task } from '../../api/types';
-import { displayError, formatDate, initials } from '../../components/format';
+import { displayError, formatDate, initials, toLocalISODate } from '../../components/format';
 import { useAuth } from '../../context/auth';
 import {
   calculateEmployeeAvailability,
@@ -41,11 +41,11 @@ export default function ProjectTeamPage() {
   const [availabilityFilter, setAvailabilityFilter] = useState('');
 
   // Date period for availability evaluation (defaults to next 14 days)
-  const [todayStr] = useState(() => new Date().toISOString().slice(0, 10));
+  const [todayStr] = useState(() => toLocalISODate());
   const [defaultEndStr] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() + 14);
-    return d.toISOString().slice(0, 10);
+    return toLocalISODate(d);
   });
   const [periodStart, setPeriodStart] = useState(todayStr);
   const [periodEnd, setPeriodEnd] = useState(defaultEndStr);

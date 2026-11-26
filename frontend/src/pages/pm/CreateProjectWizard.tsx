@@ -18,8 +18,9 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { client, unwrapList } from '../../api/client';
+import { isProjectAssignable } from '../../utils/managers';
 import type { Employee, LeaveRequest, Task } from '../../api/types';
-import { displayError } from '../../components/format';
+import { displayError, toLocalISODate } from '../../components/format';
 import {
   Button,
   Card,
@@ -289,11 +290,11 @@ export default function CreateProjectWizard({
   const [submitError, setSubmitError] = useState('');
 
   // Date strings for availability calculation
-  const [todayStr] = useState(() => new Date().toISOString().slice(0, 10));
+  const [todayStr] = useState(() => toLocalISODate());
   const [twoWeeksStr] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() + 14);
-    return d.toISOString().slice(0, 10);
+    return toLocalISODate(d);
   });
 
   // ── Load data ──────────────────────────────────────────────────────────────
@@ -353,7 +354,7 @@ export default function CreateProjectWizard({
   const eligibleEmployees = useMemo(() => {
     return employees.filter((emp) => {
       const status = (emp.employment_status || '').toLowerCase();
-      return status === 'active' || status === '';
+      return (status === 'active' || status === '') && isProjectAssignable(emp);
     });
   }, [employees]);
 
@@ -552,13 +553,6 @@ export default function CreateProjectWizard({
               value={projectDetails.end_date}
               onChange={(e) => setProjectDetails((p) => ({ ...p, end_date: e.target.value }))}
             />
-          </div>
-
-          {/* Backend limitation notice */}
-          <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-[11px] text-blue-700">
-            <span className="font-semibold">Note:</span> Project priority is not stored in the
-            backend schema. Team membership and leader designation will be recorded via initial task
-            assignments (the only available mechanism without a backend schema change).
           </div>
 
           <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">

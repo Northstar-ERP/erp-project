@@ -42,6 +42,8 @@ class LeavePolicyViewSet(CacheableModelMixin, AuditModelViewSet):
     permission_classes = [IsHRAdminOrReadOnly]
     cache_ttl = MASTER_DATA_TTL
     cache_actions = ['list', 'retrieve']
+    # Non-HR users only see their own company's policies.
+    cache_per_user = True
 
     def get_queryset(self):
         queryset = LeavePolicy.objects.select_related(

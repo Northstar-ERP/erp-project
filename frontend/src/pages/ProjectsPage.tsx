@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { client, unwrapList } from '../api/client';
+import { isProjectAssignable } from '../utils/managers';
 import type { Employee, Project, Task } from '../api/types';
 import { displayError, formatDate } from '../components/format';
 import { useAuth } from '../context/auth';
@@ -22,6 +23,25 @@ import {
 } from '../components/ui';
 
 const PAGE_SIZE = 8;
+
+function TeamList({ members }: { members?: Employee[] }) {
+  if (!members || members.length === 0) {
+    return <span className="text-[11px] text-slate-400">No team members yet</span>;
+  }
+  return (
+    <div className="flex max-w-xs flex-wrap gap-1">
+      {members.map((m) => (
+        <span
+          key={m.public_id}
+          title={m.job_title || undefined}
+          className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700"
+        >
+          {m.first_name} {m.last_name}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 export default function ProjectsPage() {
   const { user, hasRole } = useAuth();
@@ -192,6 +212,11 @@ export default function ProjectsPage() {
   };
 
   // Helper to map project UUID to name
+  const projectById = useMemo(
+    () => new Map(projects.map((p) => [p.public_id, p])),
+    [projects],
+  );
+
   const projectMap = useMemo(() => {
     return new Map(projects.map((p) => [p.public_id, p.name]));
   }, [projects]);
@@ -401,6 +426,7 @@ export default function ProjectsPage() {
                     <tr>
                       <th className="px-5 py-3">Project Initiative</th>
                       <th className="px-5 py-3">Project Manager</th>
+                      <th className="px-5 py-3">Team Members</th>
                       <th className="px-5 py-3">Delivery Timeline</th>
                       <th className="px-5 py-3">Status</th>
                     </tr>
@@ -439,6 +465,9 @@ export default function ProjectsPage() {
                               <span className="text-slate-400">Unassigned Owner</span>
                             )}
                           </td>
+                          <td className="px-5 py-3.5">
+                            <TeamList members={proj.team_members} />
+                          </td>
                           <td className="px-5 py-3.5 font-mono text-[11px] text-slate-600">
                             {formatDate(proj.start_date)}
                             <span className="mx-1.5 text-slate-300">→</span>
@@ -467,6 +496,29 @@ export default function ProjectsPage() {
                               <span className="font-medium text-slate-800">
                                 {projectMap.get(task.project) || 'Project Record'}
                               </span>
+                              {(() => {
+                                const proj = projectById.get(task.project);
+                                if (!proj) return null;
+                                const teammates = (proj.team_members ?? []).filter(
+                                  (m) => m.public_id !== task.assigned_to_details?.public_id,
+                                );
+                                return (
+                                  <div className="mt-1 space-y-0.5 text-[11px] text-slate-500">
+                                    <p>
+                                      <span className="font-semibold text-slate-600">PM:</span>{' '}
+                                      {proj.manager_details
+                                        ? `${proj.manager_details.first_name} ${proj.manager_details.last_name}`
+                                        : 'Unassigned'}
+                                    </p>
+                                    {teammates.length > 0 && (
+                                      <p className="max-w-xs">
+                                        <span className="font-semibold text-slate-600">Team:</span>{' '}
+                                        {teammates.map((m) => `${m.first_name} ${m.last_name}`).join(', ')}
+                                      </p>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </td>
                             <td className="px-5 py-3.5">
                               {task.assigned_to_details ? (
@@ -628,7 +680,7 @@ export default function ProjectsPage() {
             <div className="grid gap-3.5 sm:grid-cols-2">
               <SelectField label="Assignee Team Member" name="assigned_to" defaultValue="">
                 <option value="">Unassigned</option>
-                {employees.map((emp) => (
+                {employees.filter(isProjectAssignable).map((emp) => (
                   <option key={emp.public_id} value={emp.public_id}>
                     {emp.first_name} {emp.last_name}
                   </option>

@@ -6,6 +6,7 @@ import { isEmployeeManager } from '../utils/managers';
 import {
   Button,
   Card,
+  ConfirmDialog,
   EmptyState,
   ErrorMessage,
   Field,
@@ -39,6 +40,8 @@ export default function BranchesPage() {
   const [viewPeopleBranch, setViewPeopleBranch] = useState<Branch | null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
+  const [branchToDelete, setBranchToDelete] = useState<Branch | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Search & Filter
   const [search, setSearch] = useState('');
@@ -167,6 +170,24 @@ export default function BranchesPage() {
       setFormError(displayError(cause));
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Delete Branch (soft delete; blocked by the backend while employees are assigned)
+  const executeDeleteBranch = async (branch: Branch) => {
+    setDeleting(true);
+    setError('');
+    setSuccess('');
+    try {
+      await client.deleteBranch(branch.public_id);
+      setBranchToDelete(null);
+      setSuccess(`Branch "${branch.name}" and its departments have been deleted.`);
+      await load();
+    } catch (cause) {
+      setBranchToDelete(null);
+      setError(displayError(cause));
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -368,6 +389,13 @@ export default function BranchesPage() {
                             >
                               <Icon name="edit" size={13} /> Edit
                             </Button>
+                            <Button
+                              size="sm"
+                              variant="outline-danger"
+                              onClick={() => setBranchToDelete(branch)}
+                            >
+                              <Icon name="trash" size={13} /> Delete
+                            </Button>
                           </div>
                         </td>
                       </tr>
@@ -387,6 +415,21 @@ export default function BranchesPage() {
           </>
         )}
       </Card>
+
+      <ConfirmDialog
+        isOpen={Boolean(branchToDelete)}
+        title="Delete branch"
+        description={
+          branchToDelete
+            ? `Delete the branch "${branchToDelete.name}"? Its departments and teams will also be removed. A branch that still has employees assigned cannot be deleted — reassign them first.`
+            : ''
+        }
+        confirmLabel="Delete Branch"
+        isDestructive
+        isLoading={deleting}
+        onConfirm={() => branchToDelete && void executeDeleteBranch(branchToDelete)}
+        onCancel={() => setBranchToDelete(null)}
+      />
 
       {/* Modal: Add Branch */}
       {addModalOpen && (

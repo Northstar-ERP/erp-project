@@ -1,7 +1,9 @@
 import api from './axios';
 import type {
   ApiListResponse,
+  AppNotification,
   Asset,
+  AttendanceRecord,
   AssetAllocation,
   AssetHistory,
   Branch,
@@ -46,6 +48,8 @@ export const endpoints = {
   departments: 'organization/departments/',
   invite: 'users/invite/',
   activate: 'users/activate/',
+  attendance: 'attendance/',
+  notifications: 'notifications/',
 };
 
 export const client = {
@@ -159,6 +163,19 @@ export const client = {
   rejectExpense: (publicId: string, comment: string) =>
     api.post<Expense>(`${endpoints.expenses}${publicId}/reject/`, { comment }),
 
+  // Attendance
+  attendance: (params?: { start_date?: string; end_date?: string }) =>
+    api.get<ApiListResponse<AttendanceRecord>>(endpoints.attendance, { params }),
+  checkIn: () => api.post<AttendanceRecord>(`${endpoints.attendance}check-in/`),
+  checkOut: () => api.post<AttendanceRecord>(`${endpoints.attendance}check-out/`),
+
+  // Notifications (always scoped to the signed-in user)
+  notifications: () => api.get<ApiListResponse<AppNotification>>(endpoints.notifications),
+  markNotificationRead: (publicId: string) =>
+    api.post<AppNotification>(`${endpoints.notifications}${publicId}/read/`),
+  markAllNotificationsRead: () =>
+    api.post<{ updated: number }>(`${endpoints.notifications}mark-all-read/`),
+
   // Organization & Hierarchy
   companies: () => api.get<ApiListResponse<Company>>(endpoints.companies),
   createCompany: (data: Record<string, unknown>) =>
@@ -173,6 +190,8 @@ export const client = {
     api.post<Branch>(endpoints.branches, data),
   updateBranch: (publicId: string, data: Record<string, unknown>) =>
     api.patch<Branch>(`${endpoints.branches}${publicId}/`, data),
+  deleteBranch: (publicId: string) =>
+    api.delete(`${endpoints.branches}${publicId}/`),
 
   departments: () =>
     api.get<ApiListResponse<Department>>(endpoints.departments),

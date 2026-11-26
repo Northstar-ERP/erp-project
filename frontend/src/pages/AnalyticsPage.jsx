@@ -478,7 +478,7 @@ export default function AnalyticsPage() {
   }, []);
 
   useEffect(() => {
-    fetchAnalytics();
+    void Promise.resolve().then(fetchAnalytics);
   }, [fetchAnalytics]);
 
   const totals = summary?.totals || {};

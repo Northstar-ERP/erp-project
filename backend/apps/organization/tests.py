@@ -212,3 +212,34 @@ class OrganizationLeadershipValidationTests(APITestCase):
         self.assertFalse(Department.objects.filter(public_id=temp_dept.public_id).exists())
 
 
+
+
+class BranchDeleteTests(APITestCase):
+    def setUp(self):
+        from apps.users.models import Employee, Role, User
+
+        admin_role = Role.objects.create(role_name='System Admin')
+        self.admin = User.objects.create_user('br-admin', password='N3w!StrongPassword85', role=admin_role)
+        company = Company.objects.create(
+            name='Acme', registration_number='BR-1', address='Pune', contact_email='a@acme.test',
+        )
+        self.empty_branch = Branch.objects.create(company=company, name='Empty', location='Pune')
+        self.empty_dept = Department.objects.create(branch=self.empty_branch, name='Unused')
+        self.busy_branch = Branch.objects.create(company=company, name='Busy', location='Mumbai')
+        busy_dept = Department.objects.create(branch=self.busy_branch, name='Ops')
+        Employee.objects.create(
+            user=User.objects.create_user('br-emp', password='N3w!StrongPassword85'),
+            first_name='E', last_name='Mp', email='e@acme.test', hire_date='2024-01-01', department=busy_dept,
+        )
+        self.client.force_authenticate(self.admin)
+
+    def test_empty_branch_and_its_departments_are_deleted(self):
+        response = self.client.delete(f'/api/organization/branches/{self.empty_branch.public_id}/')
+        self.assertEqual(response.status_code, 204)
+        self.assertTrue(Branch.all_objects.get(pk=self.empty_branch.pk).is_deleted)
+        self.assertTrue(Department.all_objects.get(pk=self.empty_dept.pk).is_deleted)
+
+    def test_branch_with_employees_cannot_be_deleted(self):
+        response = self.client.delete(f'/api/organization/branches/{self.busy_branch.public_id}/')
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(Branch.all_objects.get(pk=self.busy_branch.pk).is_deleted)
