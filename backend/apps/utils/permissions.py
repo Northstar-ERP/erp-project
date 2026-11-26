@@ -52,3 +52,18 @@ class IsSystemAdminOrHRManager(permissions.BasePermission):
         if request.user.role is None:
             return False
         return request.user.role.role_name in ['System Admin', 'HR Manager']
+
+
+class IsSystemAdminOrHRManagerOrReadOnly(permissions.BasePermission):
+    """Read access for all authenticated users; write access for System Admins and HR Managers."""
+
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        if request.user.is_superuser:
+            return True
+        if request.user.role is None:
+            return False
+        return request.user.role.role_name in ['System Admin', 'HR Manager']

@@ -1,6 +1,7 @@
 from django.db import transaction
 from django.utils import timezone
 
+from django.db.models import Q
 from rest_framework import permissions
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
@@ -15,7 +16,12 @@ from .serializers import (
     AssetHistorySerializer,
 )
 
-ASSET_MANAGER_ROLES = ['System Admin', 'IT']
+ASSET_MANAGER_ROLES = ['System Admin', 'IT', 'HR Manager']
+PROJECT_MANAGER_ROLE = 'Department / Project Manager'
+
+
+def _role_name(user):
+    return getattr(getattr(user, 'role', None), 'role_name', None)
 
 
 class AssetPermission(permissions.BasePermission):
@@ -27,6 +33,38 @@ class AssetPermission(permissions.BasePermission):
             return False
         role_name = getattr(getattr(request.user, 'role', None), 'role_name', None)
         return request.user.is_superuser or role_name in ASSET_MANAGER_ROLES
+
+
+class AllocationPermission(AssetPermission):
+    """Asset managers have full access. A Department / Project Manager may
+    only return (deallocate) devices currently allocated to their direct reports."""
+
+    def has_permission(self, request, view):
+        if super().has_permission(request, view):
+            return True
+        return (
+            request.method == 'PATCH'
+            and request.user.is_authenticated
+            and _role_name(request.user) == PROJECT_MANAGER_ROLE
+        )
+
+    def has_object_permission(self, request, view, obj):
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        user = request.user
+        if user.is_superuser or _role_name(user) in ASSET_MANAGER_ROLES:
+            return True
+        if _role_name(user) != PROJECT_MANAGER_ROLE or request.method != 'PATCH':
+            return False
+        manager = obj.employee.manager
+        if not manager or manager.user_id != user.id:
+            return False
+        if obj.status != AssetAllocation.Status.ALLOCATED:
+            return False
+        # Only a return is allowed: status=Returned, optionally with a return_date.
+        if not set(request.data.keys()) <= {'status', 'return_date'}:
+            return False
+        return request.data.get('status', AssetAllocation.Status.RETURNED) == AssetAllocation.Status.RETURNED
 
 
 class AssetViewSet(AuditModelViewSet):
@@ -41,11 +79,15 @@ class AssetViewSet(AuditModelViewSet):
         if user.is_superuser or role_name in ASSET_MANAGER_ROLES:
             return queryset
 
-        if role_name in [
-            'Employee',
-            'Department / Project Manager',
-            'HR Manager',
-        ]:
+        if role_name == PROJECT_MANAGER_ROLE:
+            return queryset.filter(
+                Q(allocations__employee__user=user)
+                | Q(allocations__employee__manager__user=user),
+                allocations__status=AssetAllocation.Status.ALLOCATED,
+                status=Asset.Status.ALLOCATED,
+            ).distinct()
+
+        if role_name == 'Employee':
             return queryset.filter(
                 allocations__employee__user=user,
                 allocations__status=AssetAllocation.Status.ALLOCATED,
@@ -53,6 +95,18 @@ class AssetViewSet(AuditModelViewSet):
             ).distinct()
 
         return queryset.none()
+
+    @transaction.atomic
+    def perform_destroy(self, instance):
+        asset = Asset.objects.select_for_update().get(pk=instance.pk)
+        if asset.status == Asset.Status.ALLOCATED or AssetAllocation.objects.filter(
+            asset=asset,
+            status=AssetAllocation.Status.ALLOCATED,
+        ).exists():
+            raise ValidationError(
+                'Return the active allocation before deleting this asset.'
+            )
+        super().perform_destroy(asset)
 
     @transaction.atomic
     def perform_update(self, serializer):
@@ -112,7 +166,7 @@ class AssetAllocationViewSet(AuditModelViewSet):
     ).order_by('-id')
 
     serializer_class = AssetAllocationSerializer
-    permission_classes = [AssetPermission]
+    permission_classes = [AllocationPermission]
     throttle_classes = [WriteBurstThrottle]
 
     def get_queryset(self):
@@ -124,13 +178,38 @@ class AssetAllocationViewSet(AuditModelViewSet):
         if user.is_superuser or role_name in ASSET_MANAGER_ROLES:
             return queryset
 
-        if role_name in [
-            'Employee',
-            'Department / Project Manager',
-            'HR Manager',
-        ]:
+        if role_name == PROJECT_MANAGER_ROLE:
+            return queryset.filter(
+                Q(employee__user=user) | Q(employee__manager__user=user)
+            )
+        if role_name == 'Employee':
             return queryset.filter(employee__user=user)
         return queryset.none()
+
+    @transaction.atomic
+    def perform_create(self, serializer):
+        asset = Asset.objects.select_for_update().get(
+            pk=serializer.validated_data['asset'].pk
+        )
+        if asset.status != Asset.Status.AVAILABLE or AssetAllocation.objects.filter(
+            asset=asset,
+            status=AssetAllocation.Status.ALLOCATED,
+        ).exists():
+            raise ValidationError({
+                'asset': f"Asset '{asset.asset_name}' is not available for allocation."
+            })
+
+        allocation = serializer.save(created_by=self.request.user)
+        asset.status = Asset.Status.ALLOCATED
+        asset.save(update_fields=['status', 'updated_at'])
+        AssetHistory.objects.create(
+            asset=asset,
+            employee=allocation.employee,
+            created_by=self.request.user,
+            event_type='Allocated',
+            event_date=timezone.now(),
+            remarks=f"Asset allocated to {allocation.employee}.",
+        )
 
     @transaction.atomic
     def perform_update(self, serializer):
@@ -214,10 +293,10 @@ class AssetHistoryViewSet(AuditModelViewSet):
 
         if user.is_superuser or role_name in ASSET_MANAGER_ROLES:
             return queryset
-        if role_name in [
-            'Employee',
-            'Department / Project Manager',
-            'HR Manager',
-        ]:
+        if role_name == PROJECT_MANAGER_ROLE:
+            return queryset.filter(
+                Q(employee__user=user) | Q(employee__manager__user=user)
+            )
+        if role_name == 'Employee':
             return queryset.filter(employee__user=user)
         return queryset.none()

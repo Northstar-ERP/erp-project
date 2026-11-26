@@ -1,0 +1,23 @@
+# Local development services.
+#   docker compose up -d redis
+# Then set REDIS_URL=redis://127.0.0.1:6379/0 in .env.
+# Without Redis the backend still runs (in-process cache, database sessions);
+# with it you get shared caching and rate limiting across processes.
+# Production uses deploy/docker-compose.yml instead.
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: erp_redis_dev
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  redis_data:

@@ -13,7 +13,9 @@ class ExpenseCategorySerializer(serializers.ModelSerializer):
 
 class ExpenseSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source='category.name', read_only=True)
+    employee = serializers.SlugRelatedField(slug_field='public_id', read_only=True)
     employee_name = serializers.SerializerMethodField(read_only=True)
+    approved_by_name = serializers.CharField(source='approved_by.username', read_only=True, allow_null=True)
     category = serializers.SlugRelatedField(
         slug_field='public_id',
         queryset=ExpenseCategory.objects.filter(is_active=True),
@@ -30,9 +32,11 @@ class ExpenseSerializer(serializers.ModelSerializer):
             'status',
             'submitted_at',
             'approved_at',
+            'approved_by_name',
             'remarks',
             'category',
             'category_name',
+            'employee',
             'employee_name',
             'created_at',
             'updated_at',
@@ -41,6 +45,7 @@ class ExpenseSerializer(serializers.ModelSerializer):
             'status',
             'submitted_at',
             'approved_at',
+            'approved_by',
             'employee',
             'created_at',
             'updated_at',

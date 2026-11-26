@@ -153,36 +153,105 @@ class AssetApiTests(APITestCase):
                 )
                 self.assertEqual(len(response.data), 3)
 
-    def test_hr_does_not_get_full_asset_access(self):
+    def test_hr_can_crud_allocate_return_and_retire_assets(self):
         self.client.force_authenticate(self.hr_user)
 
-        inventory_response = self.client.get(reverse('asset-list'))
-        allocation_response = self.client.get(
-            reverse('asset-allocation-list')
-        )
-        history_response = self.client.get(reverse('asset-history-list'))
-        create_response = self.client.post(
+        # HR can view all assets, allocations, and history
+        self.assertEqual(len(self.client.get(reverse('asset-list')).data), 3)
+        self.assertEqual(len(self.client.get(reverse('asset-allocation-list')).data), 2)
+        self.assertEqual(len(self.client.get(reverse('asset-history-list')).data), 2)
+
+        # HR can create an asset
+        create_res = self.client.post(
             reverse('asset-list'),
             {
-                'asset_name': 'HR-created asset',
-                'category': 'Computer equipment',
+                'asset_name': 'HR MacBook Pro',
+                'category': 'Laptop',
+                'serial_number': 'HR-MBP-001',
             },
             format='json',
         )
+        self.assertEqual(create_res.status_code, status.HTTP_201_CREATED, create_res.data)
+        asset_id = create_res.data['public_id']
+        asset_detail_url = reverse('asset-detail', kwargs={'public_id': asset_id})
 
-        self.assertEqual(
-            inventory_response.status_code,
-            status.HTTP_200_OK,
-            inventory_response.data,
+        # HR can edit the asset
+        patch_res = self.client.patch(
+            asset_detail_url,
+            {'asset_name': 'HR MacBook Pro 16'},
+            format='json',
         )
-        self.assertEqual(inventory_response.data, [])
-        self.assertEqual(allocation_response.data, [])
-        self.assertEqual(history_response.data, [])
-        self.assertEqual(
-            create_response.status_code,
-            status.HTTP_403_FORBIDDEN,
-            create_response.data,
+        self.assertEqual(patch_res.status_code, status.HTTP_200_OK, patch_res.data)
+        self.assertEqual(patch_res.data['asset_name'], 'HR MacBook Pro 16')
+
+        # HR can allocate the asset
+        alloc_res = self.client.post(
+            reverse('asset-allocation-list'),
+            {
+                'asset': asset_id,
+                'employee': str(self.employee.public_id),
+                'allocation_date': '2026-02-10',
+            },
+            format='json',
         )
+        self.assertEqual(alloc_res.status_code, status.HTTP_201_CREATED, alloc_res.data)
+        alloc_id = alloc_res.data['public_id']
+
+        # Double allocation must be blocked
+        double_res = self.client.post(
+            reverse('asset-allocation-list'),
+            {
+                'asset': asset_id,
+                'employee': str(self.other_employee.public_id),
+                'allocation_date': '2026-02-11',
+            },
+            format='json',
+        )
+        self.assertEqual(double_res.status_code, status.HTTP_400_BAD_REQUEST, double_res.data)
+
+        # HR can return the asset
+        return_res = self.client.patch(
+            reverse('asset-allocation-detail', kwargs={'public_id': alloc_id}),
+            {'status': AssetAllocation.Status.RETURNED},
+            format='json',
+        )
+        self.assertEqual(return_res.status_code, status.HTTP_200_OK, return_res.data)
+        asset_obj = Asset.objects.get(public_id=asset_id)
+        self.assertEqual(asset_obj.status, Asset.Status.AVAILABLE)
+
+        # HR can retire the asset
+        retire_res = self.client.patch(
+            reverse('asset-change-status', kwargs={'public_id': asset_id}),
+            {'status': Asset.Status.RETIRED},
+            format='json',
+        )
+        self.assertEqual(retire_res.status_code, status.HTTP_200_OK, retire_res.data)
+        asset_obj.refresh_from_db()
+        self.assertEqual(asset_obj.status, Asset.Status.RETIRED)
+
+        # HR can soft-delete the retired asset
+        del_res = self.client.delete(asset_detail_url)
+        self.assertEqual(del_res.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Asset.objects.filter(public_id=asset_id).exists())
+
+    def test_employee_cannot_create_edit_or_allocate_assets(self):
+        self.client.force_authenticate(self.employee_user)
+        res_create = self.client.post(
+            reverse('asset-list'),
+            {'asset_name': 'Unauthorized', 'category': 'Laptop'},
+            format='json',
+        )
+        res_alloc = self.client.post(
+            reverse('asset-allocation-list'),
+            {
+                'asset': str(self.available_asset.public_id),
+                'employee': str(self.employee.public_id),
+                'allocation_date': '2026-02-10',
+            },
+            format='json',
+        )
+        self.assertEqual(res_create.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(res_alloc.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_employee_sees_only_their_allocation_and_history(self):
         self.client.force_authenticate(self.employee_user)
@@ -445,3 +514,71 @@ class AssetApiTests(APITestCase):
         )
         self.owned_asset.refresh_from_db()
         self.assertEqual(self.owned_asset.status, Asset.Status.ALLOCATED)
+
+
+class ManagerDeallocationTests(APITestCase):
+    """A Department / Project Manager may return devices held by direct reports only."""
+
+    def setUp(self):
+        pm_role = Role.objects.create(role_name='Department / Project Manager')
+        employee_role = Role.objects.create(role_name='Employee')
+        self.pm_user = User.objects.create_user('pm', password='N3w!StrongPassword85', role=pm_role)
+        report_user = User.objects.create_user('report', password='N3w!StrongPassword85', role=employee_role)
+        outsider_user = User.objects.create_user('outsider', password='N3w!StrongPassword85', role=employee_role)
+        self.pm = self.make_employee(self.pm_user, 'Pat', 'Manager', 'pm@example.com')
+        self.report = self.make_employee(report_user, 'Riley', 'Report', 'riley@example.com', manager=self.pm)
+        self.outsider = self.make_employee(outsider_user, 'Olive', 'Outsider', 'olive@example.com')
+
+        self.report_asset = Asset.objects.create(
+            asset_name='Report Laptop', category='Laptop', serial_number='PM-1', status=Asset.Status.ALLOCATED,
+        )
+        self.outsider_asset = Asset.objects.create(
+            asset_name='Outsider Laptop', category='Laptop', serial_number='PM-2', status=Asset.Status.ALLOCATED,
+        )
+        self.report_alloc = AssetAllocation.objects.create(
+            asset=self.report_asset, employee=self.report, allocation_date=date(2026, 1, 10),
+        )
+        self.outsider_alloc = AssetAllocation.objects.create(
+            asset=self.outsider_asset, employee=self.outsider, allocation_date=date(2026, 1, 10),
+        )
+        self.client.force_authenticate(self.pm_user)
+
+    def make_employee(self, user, first, last, email, manager=None):
+        return Employee.objects.create(
+            user=user, first_name=first, last_name=last, email=email,
+            hire_date=date(2024, 1, 15), manager=manager,
+        )
+
+    def url(self, allocation):
+        return reverse('asset-allocation-detail', kwargs={'public_id': str(allocation.public_id)})
+
+    def test_manager_sees_direct_reports_allocations_and_assets(self):
+        allocations = self.client.get(reverse('asset-allocation-list')).data
+        self.assertEqual([a['public_id'] for a in allocations], [str(self.report_alloc.public_id)])
+        assets = self.client.get(reverse('asset-list')).data
+        self.assertEqual([a['public_id'] for a in assets], [str(self.report_asset.public_id)])
+
+    def test_manager_can_return_direct_reports_device(self):
+        response = self.client.patch(
+            self.url(self.report_alloc), {'status': 'Returned', 'return_date': '2026-02-01'}, format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.report_asset.refresh_from_db()
+        self.assertEqual(self.report_asset.status, Asset.Status.AVAILABLE)
+        self.assertTrue(AssetHistory.objects.filter(asset=self.report_asset, event_type='Returned').exists())
+
+    def test_manager_cannot_return_outsiders_device(self):
+        response = self.client.patch(self.url(self.outsider_alloc), {'status': 'Returned'}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_manager_cannot_edit_other_allocation_fields_or_create_assets(self):
+        response = self.client.patch(
+            self.url(self.report_alloc), {'allocation_date': '2026-01-01'}, format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        response = self.client.post(
+            reverse('asset-list'), {'asset_name': 'X', 'category': 'Y'}, format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        response = self.client.delete(self.url(self.report_alloc))
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)

@@ -129,6 +129,8 @@ class ProjectTaskApiTests(APITestCase):
                 'job_title',
                 'role_name',
                 'department_name',
+                'branch_name',
+                'company_name',
             },
         )
 
@@ -285,3 +287,68 @@ class ProjectTaskApiTests(APITestCase):
             str(response.data['project']),
             str(self.active_project.public_id),
         )
+
+
+class ProjectTeamMembersTests(APITestCase):
+    """An assignee can see the project manager and their teammates."""
+
+    def setUp(self):
+        pm_role = Role.objects.create(role_name='Department / Project Manager')
+        emp_role = Role.objects.create(role_name='Employee')
+
+        def emp(username, role):
+            user = User.objects.create_user(username, password='N3w!StrongPassword85', role=role)
+            return Employee.objects.create(
+                user=user, first_name=username.title(), last_name='X',
+                email=f'{username}@x.test', hire_date=date(2024, 1, 1),
+            )
+
+        self.pm = emp('pm', pm_role)
+        self.alice = emp('alice', emp_role)
+        self.bob = emp('bob', emp_role)
+        self.project = Project.objects.create(name='Apollo', manager=self.pm, start_date=date(2026, 1, 1))
+        Task.objects.create(project=self.project, assigned_to=self.alice, title='A')
+        Task.objects.create(project=self.project, assigned_to=self.bob, title='B')
+        Task.objects.create(project=self.project, assigned_to=self.pm, title='Plan')
+        deleted = Task.objects.create(project=self.project, assigned_to=self.pm, title='Old')
+        deleted.delete()
+
+    def test_assignee_sees_manager_and_team(self):
+        self.client.force_authenticate(self.alice.user)
+        response = self.client.get(reverse('project-list'))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        project = response.data[0]
+        self.assertEqual(project['manager_details']['first_name'], 'Pm')
+        self.assertEqual(
+            [m['first_name'] for m in project['team_members']], ['Alice', 'Bob'],
+        )
+
+    def test_assignment_notification_names_manager_and_team(self):
+        from apps.notifications.models import Notification
+        from apps.notifications.services import task_assigned
+
+        task = Task.objects.get(title='A')
+        task_assigned(task, actor=self.pm.user)
+        message = Notification.objects.get(recipient=self.alice.user).message
+        self.assertIn('Project manager: Pm X.', message)
+        self.assertIn('Team: Bob X.', message)
+
+
+class HRTaskAssignmentTests(APITestCase):
+    def test_hr_cannot_be_assigned_a_task(self):
+        admin_role = Role.objects.create(role_name='System Admin')
+        hr_role = Role.objects.create(role_name='HR Manager')
+        admin = User.objects.create_user('hr-t-admin', password='N3w!StrongPassword85', role=admin_role)
+        hr = Employee.objects.create(
+            user=User.objects.create_user('hr-t-hr', password='N3w!StrongPassword85', role=hr_role),
+            first_name='Hana', last_name='HR', email='hana@x.test', hire_date=date(2024, 1, 1),
+        )
+        project = Project.objects.create(name='P', manager=hr, start_date=date(2026, 1, 1))
+        self.client.force_authenticate(admin)
+        response = self.client.post(
+            reverse('task-list'),
+            {'project': str(project.public_id), 'assigned_to': str(hr.public_id), 'title': 'T'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('assigned_to', response.data)
