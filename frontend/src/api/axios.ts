@@ -1,3 +1,4 @@
+
 import axios, {
   type AxiosError,
   type InternalAxiosRequestConfig,
@@ -15,15 +16,29 @@ const baseURL =
 
 export const api = axios.create({
   baseURL: baseURL.endsWith('/') ? baseURL : `${baseURL}/`,
-  withCredentials: true,
   headers: { 'Content-Type': 'application/json' },
 });
 
+// The access token lives only in memory. The refresh token is kept in
+// sessionStorage so a page reload can restore the session; it is cleared when
+// the tab is closed and is never shared with other tabs.
+const REFRESH_STORAGE_KEY = 'erp.refresh';
+
+function readStoredRefreshToken(): string | null {
+  try {
+    return window.sessionStorage.getItem(REFRESH_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
 let accessToken: string | null = null;
+let refreshToken: string | null = readStoredRefreshToken();
 let refreshInFlight: Promise<string> | null = null;
 
 export function setAccessToken(token: string | null): void {
   accessToken = token;
+
   if (!token) {
     delete api.defaults.headers.common.Authorization;
   } else {
@@ -31,14 +46,37 @@ export function setAccessToken(token: string | null): void {
   }
 }
 
+export function setRefreshToken(token: string | null): void {
+  refreshToken = token;
+  try {
+    if (token) {
+      window.sessionStorage.setItem(REFRESH_STORAGE_KEY, token);
+    } else {
+      window.sessionStorage.removeItem(REFRESH_STORAGE_KEY);
+    }
+  } catch {
+    // Storage unavailable (e.g. privacy mode): fall back to memory only.
+  }
+}
+
 export function getAccessToken(): string | null {
   return accessToken;
+}
+
+export function getRefreshToken(): string | null {
+  return refreshToken;
+}
+
+export function clearTokens(): void {
+  setAccessToken(null);
+  setRefreshToken(null);
 }
 
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   if (accessToken) {
     config.headers.Authorization = `Bearer ${accessToken}`;
   }
+
   return config;
 });
 
@@ -46,8 +84,11 @@ api.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     const originalRequest = error.config as
-      | (InternalAxiosRequestConfig & { _retriedAfterRefresh?: boolean })
+      | (InternalAxiosRequestConfig & {
+          _retriedAfterRefresh?: boolean;
+        })
       | undefined;
+
     const isRefreshRequest = originalRequest?.url?.includes(
       '/users/auth/token/refresh/',
     );
@@ -56,27 +97,34 @@ api.interceptors.response.use(
       error.response?.status !== 401 ||
       !originalRequest ||
       originalRequest._retriedAfterRefresh ||
-      isRefreshRequest
+      isRefreshRequest ||
+      !refreshToken
     ) {
       return Promise.reject(error);
     }
 
     originalRequest._retriedAfterRefresh = true;
+
     refreshInFlight ??= axios
-      .post<{ access: string }>(
+      .post<{ access: string; refresh?: string }>(
         `${api.defaults.baseURL}users/auth/token/refresh/`,
-        undefined,
-        { withCredentials: true },
+        { refresh: refreshToken },
       )
       .then(({ data }) => {
         if (!data.access) {
           throw new Error('The refresh endpoint did not return an access token.');
         }
+
         setAccessToken(data.access);
+
+        if (data.refresh) {
+          setRefreshToken(data.refresh);
+        }
+
         return data.access;
       })
       .catch((refreshError: unknown) => {
-        setAccessToken(null);
+        clearTokens();
         window.dispatchEvent(new Event('erp:authentication-expired'));
         throw refreshError;
       })

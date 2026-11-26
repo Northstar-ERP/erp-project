@@ -14,11 +14,26 @@ class AnalyticsAPITests(TestCase):
 
         self.assertEqual(response.status_code, 401)
 
-    def test_authenticated_request_returns_analytics(self):
+    def test_user_without_admin_or_hr_role_is_forbidden(self):
+        User = get_user_model()
+        user = User.objects.create_user(
+            username="analytics_plain_user",
+            password="TestPassword123!",
+        )
+        self.client.force_authenticate(user=user)
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_admin_request_returns_analytics(self):
+        from apps.users.models import Role
+
         User = get_user_model()
         user = User.objects.create_user(
             username="analytics_test_user",
             password="TestPassword123!",
+            role=Role.objects.create(role_name="System Admin"),
         )
         self.client.force_authenticate(user=user)
 

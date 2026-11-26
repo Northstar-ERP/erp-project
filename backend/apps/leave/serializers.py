@@ -1,6 +1,7 @@
 
 from rest_framework import serializers
 
+from apps.organization.models import Company
 from .models import LeaveType, LeavePolicy, LeaveRequest, LeaveBalance
 from .permissions import get_employee, get_employee_company
 
@@ -12,6 +13,14 @@ class LeaveTypeSerializer(serializers.ModelSerializer):
 
 
 class LeavePolicySerializer(serializers.ModelSerializer):
+    company = serializers.SlugRelatedField(
+        slug_field="public_id",
+        queryset=Company.objects.all(),
+    )
+    leave_type = serializers.SlugRelatedField(
+        slug_field="public_id",
+        queryset=LeaveType.objects.all(),
+    )
     leave_type_name = serializers.CharField(
         source="leave_type.name",
         read_only=True,
@@ -39,9 +48,21 @@ class LeavePolicySerializer(serializers.ModelSerializer):
 
 
 class LeaveRequestSerializer(serializers.ModelSerializer):
+    employee = serializers.SlugRelatedField(
+        slug_field="public_id",
+        read_only=True,
+    )
     employee_name = serializers.SerializerMethodField()
+    leave_type = serializers.SlugRelatedField(
+        slug_field="public_id",
+        queryset=LeaveType.objects.all(),
+    )
     leave_type_name = serializers.CharField(
         source="leave_type.name",
+        read_only=True,
+    )
+    reviewed_by = serializers.SlugRelatedField(
+        slug_field="public_id",
         read_only=True,
     )
     duration = serializers.SerializerMethodField()
@@ -164,9 +185,32 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
 
         return attrs
 
+    def create(self, validated_data):
+        request = self.context.get("request")
+        employee = get_employee(request.user) if request and request.user.is_authenticated else None
+        if not employee:
+            raise serializers.ValidationError(
+                "Your account is not linked to an employee profile."
+            )
+        validated_data["employee"] = employee
+        validated_data["status"] = LeaveRequest.Status.PENDING
+        return super().create(validated_data)
+
 
 class LeaveBalanceSerializer(serializers.ModelSerializer):
+    employee = serializers.SlugRelatedField(
+        slug_field="public_id",
+        read_only=True,
+    )
     employee_name = serializers.SerializerMethodField()
+    company = serializers.SlugRelatedField(
+        slug_field="public_id",
+        read_only=True,
+    )
+    leave_type = serializers.SlugRelatedField(
+        slug_field="public_id",
+        read_only=True,
+    )
     leave_type_name = serializers.CharField(
         source="leave_type.name",
         read_only=True,

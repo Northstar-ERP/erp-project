@@ -1,4 +1,5 @@
 from django.contrib.auth.models import AbstractUser, UserManager as DjangoUserManager
+from django.core.exceptions import ValidationError
 from django.db import models
 
 from apps.utils.models import (
@@ -52,6 +53,22 @@ class Employee(AuditBaseModel):
     job_title = models.CharField(max_length=200, blank=True, null=True)
     department = models.ForeignKey('organization.Department', on_delete=models.SET_NULL, null=True, blank=True, related_name='employees')
     manager = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='subordinates')
+
+    @property
+    def branch(self):
+        return self.department.branch if self.department else None
+
+    @property
+    def company(self):
+        return self.department.branch.company if self.department and self.department.branch else None
+
+    def clean(self):
+        super().clean()
+        if self.employment_status == 'Active' and not self.department_id:
+            raise ValidationError({'department': 'Department is required for active employees.'})
+        if self.manager_id:
+            if not self.company or not self.manager.company or self.company.id != self.manager.company.id:
+                raise ValidationError({'manager': 'An employee’s manager must belong to the same company.'})
 
     def __str__(self):
         return f"{self.first_name} {self.last_name}"

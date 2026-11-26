@@ -173,6 +173,17 @@ def task_assigned(task, actor=None):
     message = f'You were assigned "{task.title}" in {task.project.name}.'
     if task.deadline:
         message += f' Due {task.deadline}.'
+    if task.project.manager:
+        message += f' Project manager: {_name(task.project.manager)}.'
+    teammates = sorted({
+        _name(t.assigned_to)
+        for t in task.project.tasks.filter(is_deleted=False, assigned_to__isnull=False)
+        .exclude(assigned_to_id=task.assigned_to_id)
+        .exclude(assigned_to_id=task.project.manager_id)
+        .select_related('assigned_to')
+    })
+    if teammates:
+        message += f' Team: {", ".join(teammates)}.'
     return notify(
         user_of(task.assigned_to),
         Type.TASK,
