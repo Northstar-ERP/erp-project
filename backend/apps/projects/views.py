@@ -1,17 +1,27 @@
 from django.db import transaction
-from rest_framework import viewsets, permissions
-from apps.users.permissions import IsSystemAdmin, IsProjectManager
+from rest_framework import permissions
+from apps.utils.permissions import IsProjectManager, IsSystemAdmin
+from apps.utils.views import AuditModelViewSet
+from apps.utils.throttling import WriteBurstThrottle
+from apps.notifications.services import (                   
+    task_assigned,
+    task_status_changed,
+    project_status_changed,
+)
 from .models import Project, Task
 from .serializers import ProjectSerializer, TaskSerializer
+from django.shortcuts import get_object_or_404
+from rest_framework.decorators import action
+from rest_framework.response import Response
 
 
-class ProjectViewSet(viewsets.ModelViewSet):
+class ProjectViewSet(AuditModelViewSet):
     serializer_class = ProjectSerializer
-    lookup_field = 'public_id'
 
     def get_queryset(self):
         user = self.request.user
         queryset = Project.objects.select_related(
+            'created_by',
             'manager',
             'manager__user',
             'manager__user__role',
@@ -31,6 +41,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
         if role_name == 'Employee':
             return queryset.filter(
                 tasks__assigned_to__user=user,
+                tasks__is_deleted=False,          # <-- new
                 tasks__status__in=[
                     Task.Status.TODO,
                     Task.Status.IN_PROGRESS,
@@ -41,23 +52,35 @@ class ProjectViewSet(viewsets.ModelViewSet):
         return queryset.none()
 
     def get_permissions(self):
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+        if self.action in ['trash', 'restore']:
+            permission_classes = [permissions.IsAuthenticated, IsSystemAdmin]
+        elif self.action in ['create', 'update', 'partial_update', 'destroy']:
             permission_classes = [permissions.IsAuthenticated, (IsSystemAdmin | IsProjectManager)]
         else:
             permission_classes = [permissions.IsAuthenticated]
         return [p() for p in permission_classes]
 
-    @transaction.atomic
-    def perform_create(self, serializer):
-        serializer.save()
+    def perform_update(self, serializer):                     
+        old_status = serializer.instance.status
+        super().perform_update(serializer)
+        project = serializer.instance
+        if project.status != old_status:
+            project_status_changed(project, old_status, actor=self.request.user)
 
-    @transaction.atomic
-    def perform_update(self, serializer):
-        serializer.save()
+    @action(detail=False, methods=['get'])
+    def trash(self, request):
+        qs = Project.all_objects.filter(is_deleted=True).select_related(
+            'created_by', 'manager', 'manager__user', 'manager__user__role',
+            'manager__department',
+        ).order_by('-deleted_at')
+        return Response(self.get_serializer(qs, many=True).data)
 
-    @transaction.atomic
-    def perform_destroy(self, instance):
-        instance.delete()
+    @action(detail=True, methods=['post'])
+    def restore(self, request, public_id=None):
+        project = get_object_or_404(Project.all_objects, public_id=public_id, is_deleted=True)
+        with transaction.atomic():
+            project.restore()
+        return Response(self.get_serializer(project).data)
 
 
 class TaskPermission(permissions.BasePermission):
@@ -109,14 +132,15 @@ class TaskPermission(permissions.BasePermission):
         return False
 
 
-class TaskViewSet(viewsets.ModelViewSet):
+class TaskViewSet(AuditModelViewSet):
     serializer_class = TaskSerializer
-    lookup_field = 'public_id'
     permission_classes = [TaskPermission]
+    throttle_classes = [WriteBurstThrottle]
 
     def get_queryset(self):
         user = self.request.user
         queryset = Task.objects.select_related(
+            'created_by',
             'project',
             'assigned_to',
             'assigned_to__user',
@@ -139,16 +163,18 @@ class TaskViewSet(viewsets.ModelViewSet):
 
         return queryset.none()
 
-    @transaction.atomic
-    def perform_create(self, serializer):
-        # Only Project Managers and System Admins can create tasks
-        serializer.save()
+    def perform_create(self, serializer):                     
+        super().perform_create(serializer)
+        task = serializer.instance
+        if task.assigned_to_id:
+            task_assigned(task, actor=self.request.user)
 
-    @transaction.atomic
     def perform_update(self, serializer):
-        # Object-level permission already checked
-        serializer.save()
-
-    @transaction.atomic
-    def perform_destroy(self, instance):
-        instance.delete()
+        old_assignee = serializer.instance.assigned_to_id   
+        old_status = serializer.instance.status
+        super().perform_update(serializer)
+        task = serializer.instance
+        if task.assigned_to_id and task.assigned_to_id != old_assignee:
+            task_assigned(task, actor=self.request.user)
+        if task.status != old_status:
+            task_status_changed(task, old_status, actor=self.request.user)

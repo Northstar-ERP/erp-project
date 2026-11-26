@@ -79,6 +79,11 @@ class EmployeeDirectorySerializer(serializers.ModelSerializer):
 
 class EmployeeSerializer(serializers.ModelSerializer):
     user_details = UserSerializer(source='user', read_only=True)
+    department_name = serializers.CharField(
+        source='department.name',
+        read_only=True,
+        allow_null=True,
+    )
 
     user = serializers.SlugRelatedField(
         slug_field='public_id',
@@ -104,7 +109,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
         fields = [
             'public_id', 'user', 'user_details', 'first_name', 'last_name',
             'email', 'phone', 'hire_date', 'employment_status',
-            'job_title', 'department', 'manager'
+            'job_title', 'department', 'department_name', 'manager'
         ]
 
     def validate_manager(self, value):

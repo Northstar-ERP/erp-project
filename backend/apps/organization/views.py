@@ -1,37 +1,39 @@
-from rest_framework import viewsets, permissions
 from .models import Company, Branch, Department, Team
 from .serializers import CompanySerializer, BranchSerializer, DepartmentSerializer, TeamSerializer
-from apps.users.permissions import IsSystemAdminOrHRManager
+from apps.utils.permissions import IsSystemAdminOrHRManager
+from apps.utils.views import AuditModelViewSet
+from apps.utils.cache import CacheableModelMixin, MASTER_DATA_TTL
 
 
-class OrganizationAdminPermission(permissions.BasePermission):
-    def has_permission(self, request, view):
-        return IsSystemAdminOrHRManager().has_permission(request, view)
-
-
-class CompanyViewSet(viewsets.ModelViewSet):
-    queryset = Company.objects.all()
+class CompanyViewSet(CacheableModelMixin, AuditModelViewSet):
+    queryset = Company.objects.select_related('created_by').all()
     serializer_class = CompanySerializer
-    permission_classes = [OrganizationAdminPermission]
-    lookup_field = 'public_id'
+    permission_classes = [IsSystemAdminOrHRManager]
+    cache_ttl = MASTER_DATA_TTL
+    cache_actions = ['list', 'retrieve']
 
 
-class BranchViewSet(viewsets.ModelViewSet):
-    queryset = Branch.objects.select_related('company').all()
+class BranchViewSet(CacheableModelMixin, AuditModelViewSet):
+    queryset = Branch.objects.select_related('company', 'created_by').all()
     serializer_class = BranchSerializer
-    permission_classes = [OrganizationAdminPermission]
-    lookup_field = 'public_id'
+    permission_classes = [IsSystemAdminOrHRManager]
+    cache_ttl = MASTER_DATA_TTL
+    cache_actions = ['list', 'retrieve']
 
 
-class DepartmentViewSet(viewsets.ModelViewSet):
-    queryset = Department.objects.select_related('branch', 'branch__company').all()
+class DepartmentViewSet(CacheableModelMixin, AuditModelViewSet):
+    queryset = Department.objects.select_related('branch', 'branch__company', 'created_by').all()
     serializer_class = DepartmentSerializer
-    permission_classes = [OrganizationAdminPermission]
-    lookup_field = 'public_id'
+    permission_classes = [IsSystemAdminOrHRManager]
+    cache_ttl = MASTER_DATA_TTL
+    cache_actions = ['list', 'retrieve']
 
 
-class TeamViewSet(viewsets.ModelViewSet):
-    queryset = Team.objects.select_related('department', 'department__branch', 'department__branch__company').all()
+class TeamViewSet(CacheableModelMixin, AuditModelViewSet):
+    queryset = Team.objects.select_related(
+        'department', 'department__branch', 'department__branch__company', 'created_by'
+    ).all()
     serializer_class = TeamSerializer
-    permission_classes = [OrganizationAdminPermission]
-    lookup_field = 'public_id'
+    permission_classes = [IsSystemAdminOrHRManager]
+    cache_ttl = MASTER_DATA_TTL
+    cache_actions = ['list', 'retrieve']

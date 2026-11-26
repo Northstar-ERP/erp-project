@@ -1,11 +1,13 @@
 from django.db import transaction
 from django.utils import timezone
 
-from rest_framework import viewsets, permissions
+from rest_framework import permissions
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
+from apps.utils.views import AuditModelViewSet
+from apps.utils.throttling import WriteBurstThrottle
 from .models import Asset, AssetAllocation, AssetHistory
 from .serializers import (
     AssetSerializer,
@@ -27,14 +29,13 @@ class AssetPermission(permissions.BasePermission):
         return request.user.is_superuser or role_name in ASSET_MANAGER_ROLES
 
 
-class AssetViewSet(viewsets.ModelViewSet):
+class AssetViewSet(AuditModelViewSet):
     serializer_class = AssetSerializer
     permission_classes = [AssetPermission]
-    lookup_field = 'public_id'
 
     def get_queryset(self):
         user = self.request.user
-        queryset = Asset.objects.all().order_by('-id')
+        queryset = Asset.objects.select_related('created_by').order_by('-id')
 
         role_name = getattr(getattr(user, 'role', None), 'role_name', None)
         if user.is_superuser or role_name in ASSET_MANAGER_ROLES:
@@ -52,10 +53,6 @@ class AssetViewSet(viewsets.ModelViewSet):
             ).distinct()
 
         return queryset.none()
-
-    @transaction.atomic
-    def perform_create(self, serializer):
-        serializer.save()
 
     @transaction.atomic
     def perform_update(self, serializer):
@@ -99,6 +96,7 @@ class AssetViewSet(viewsets.ModelViewSet):
         asset.save(update_fields=['status'])
         AssetHistory.objects.create(
             asset=asset,
+            created_by=request.user,
             event_type='Status Changed',
             event_date=timezone.now(),
             remarks=f"Status changed from {old_status} to {new_status}.",
@@ -106,28 +104,23 @@ class AssetViewSet(viewsets.ModelViewSet):
         return Response(self.get_serializer(asset).data)
 
 
-class AssetAllocationViewSet(viewsets.ModelViewSet):
+class AssetAllocationViewSet(AuditModelViewSet):
     queryset = AssetAllocation.objects.select_related(
+        'created_by',
         'asset',
-        'employee'
+        'employee',
     ).order_by('-id')
 
     serializer_class = AssetAllocationSerializer
     permission_classes = [AssetPermission]
-    lookup_field = 'public_id'
+    throttle_classes = [WriteBurstThrottle]
 
     def get_queryset(self):
         queryset = super().get_queryset()
 
         user = self.request.user
+        role_name = getattr(getattr(user, 'role', None), 'role_name', None)
 
-        role_name = getattr(
-            getattr(user, 'role', None),
-            'role_name',
-            None
-        )
-
-        # System Admin and HR Manager can see all allocations
         if user.is_superuser or role_name in ASSET_MANAGER_ROLES:
             return queryset
 
@@ -138,32 +131,6 @@ class AssetAllocationViewSet(viewsets.ModelViewSet):
         ]:
             return queryset.filter(employee__user=user)
         return queryset.none()
-
-    @transaction.atomic
-    def perform_create(self, serializer):
-        requested_asset = serializer.validated_data['asset']
-        asset = Asset.objects.select_for_update().get(pk=requested_asset.pk)
-
-        if asset.status != Asset.Status.AVAILABLE:
-            raise ValidationError(
-                "This asset is not available for allocation."
-            )
-
-        allocation = serializer.save(
-            asset=asset,
-            status=AssetAllocation.Status.ALLOCATED,
-        )
-
-        asset.status = Asset.Status.ALLOCATED
-        asset.save(update_fields=['status'])
-
-        AssetHistory.objects.create(
-            asset=asset,
-            employee=allocation.employee,
-            event_type='Allocated',
-            event_date=timezone.now(),
-            remarks=f"Asset allocated to {allocation.employee}."
-        )
 
     @transaction.atomic
     def perform_update(self, serializer):
@@ -181,9 +148,7 @@ class AssetAllocationViewSet(viewsets.ModelViewSet):
             if allocation.return_date is None:
                 allocation.return_date = timezone.now().date()
             allocation.status = AssetAllocation.Status.RETURNED
-            allocation.save(
-                update_fields=['return_date', 'status']
-            )
+            allocation.save(update_fields=['return_date', 'status'])
 
             if was_allocated:
                 asset = Asset.objects.select_for_update().get(
@@ -200,6 +165,7 @@ class AssetAllocationViewSet(viewsets.ModelViewSet):
                 AssetHistory.objects.create(
                     asset=asset,
                     employee=allocation.employee,
+                    created_by=self.request.user,
                     event_type='Returned',
                     event_date=timezone.now(),
                     remarks=f"Asset returned by {allocation.employee}."
@@ -224,21 +190,23 @@ class AssetAllocationViewSet(viewsets.ModelViewSet):
             AssetHistory.objects.create(
                 asset=asset,
                 employee=allocation.employee,
+                created_by=self.request.user,
                 event_type='Allocation Deleted - Returned',
                 event_date=timezone.now(),
                 remarks=f"Allocation deleted by {self.request.user}."
             )
-        allocation.delete()
+        super().perform_destroy(allocation)
 
 
-class AssetHistoryViewSet(viewsets.ReadOnlyModelViewSet):
+class AssetHistoryViewSet(AuditModelViewSet):
     serializer_class = AssetHistorySerializer
     permission_classes = [permissions.IsAuthenticated]
-    lookup_field = 'public_id'
+    http_method_names = ['get', 'head', 'options']
 
     def get_queryset(self):
         user = self.request.user
         queryset = AssetHistory.objects.select_related(
+            'created_by',
             'asset',
             'employee',
         ).order_by('-event_date')

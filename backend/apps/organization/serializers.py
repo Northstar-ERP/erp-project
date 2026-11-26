@@ -4,7 +4,10 @@ from .models import Company, Branch, Department, Team
 class CompanySerializer(serializers.ModelSerializer):
     class Meta:
         model = Company
-        fields = ['public_id', 'name', 'registration_number', 'address', 'contact_email', 'created_at', 'updated_at']
+        fields = [
+            'public_id', 'name', 'registration_number', 'address', 'contact_email',
+            'creation_reason', 'created_at', 'updated_at',
+        ]
         read_only_fields = ['public_id', 'created_at', 'updated_at']
 
 class BranchSerializer(serializers.ModelSerializer):
@@ -14,7 +17,10 @@ class BranchSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Branch
-        fields = ['public_id', 'company', 'company_name', 'name', 'location', 'contact_phone', 'created_at', 'updated_at']
+        fields = [
+            'public_id', 'company', 'company_name', 'name', 'location',
+            'contact_phone', 'creation_reason', 'created_at', 'updated_at',
+        ]
         read_only_fields = ['public_id', 'created_at', 'updated_at']
 
 class DepartmentSerializer(serializers.ModelSerializer):

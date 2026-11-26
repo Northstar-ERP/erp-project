@@ -1,10 +1,13 @@
-import uuid
+from django.contrib.auth.models import AbstractUser, UserManager as DjangoUserManager
 from django.db import models
-from django.contrib.auth.models import AbstractUser
 
-class Role(models.Model):
-    # Add this inside each class
-    public_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+from apps.utils.models import (
+    AuditBaseModel,
+    SoftDeleteQuerySet,
+)
+
+
+class Role(AuditBaseModel):
     # Django automatically generates an auto-incrementing primary key 'id' (role_id)
     role_name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True, null=True)
@@ -14,21 +17,21 @@ class Role(models.Model):
     def __str__(self):
         return self.role_name
 
-class User(AbstractUser):
-    # Add this inside each class
-    public_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+class UserManager(DjangoUserManager.from_queryset(SoftDeleteQuerySet)):
+    def get_queryset(self):
+        return super().get_queryset().filter(is_deleted=False)
+
+
+class User(AuditBaseModel, AbstractUser):
     # AbstractUser already provides 'username', 'email', 'password', and 'is_active'
     # Here we map the remaining fields from the ERD
     role = models.ForeignKey(Role, on_delete=models.SET_NULL, null=True, related_name='users')
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    objects = UserManager()
 
     def __str__(self):
         return self.username
 
-class Admin(models.Model):
-    # Add this inside each class
-    public_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+class Admin(AuditBaseModel):
     # Django auto-generates 'id' which serves as the admin_id
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='admin_profile')
     role = models.ForeignKey(Role, on_delete=models.SET_NULL, null=True)
@@ -37,9 +40,7 @@ class Admin(models.Model):
         return f"Admin: {self.user.username}"
 
 
-class Employee(models.Model):
-    # Add this inside each class
-    public_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+class Employee(AuditBaseModel):
     # Django auto-generates 'id' which serves as the employee_id
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='employee_profile')
     first_name = models.CharField(max_length=100)

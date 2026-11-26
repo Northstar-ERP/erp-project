@@ -1,8 +1,8 @@
-import uuid
 from django.db import models
+from apps.utils.models import AuditBaseModel
 
 
-class Asset(models.Model):
+class Asset(AuditBaseModel):
 
     class Status(models.TextChoices):
         AVAILABLE = 'Available', 'Available'
@@ -10,12 +10,6 @@ class Asset(models.Model):
         MAINTENANCE = 'Maintenance', 'Maintenance'
         RETIRED = 'Retired', 'Retired'
         LOST = 'Lost', 'Lost'
-
-    public_id = models.UUIDField(
-        default=uuid.uuid4,
-        editable=False,
-        unique=True
-    )
 
     asset_name = models.CharField(
         max_length=200
@@ -47,17 +41,11 @@ class Asset(models.Model):
         return f"{self.asset_name} - {self.serial_number}"
 
 
-class AssetAllocation(models.Model):
+class AssetAllocation(AuditBaseModel):
 
     class Status(models.TextChoices):
         ALLOCATED = 'Allocated', 'Allocated'
         RETURNED = 'Returned', 'Returned'
-
-    public_id = models.UUIDField(
-        default=uuid.uuid4,
-        editable=False,
-        unique=True
-    )
 
     asset = models.ForeignKey(
         Asset,
@@ -88,13 +76,7 @@ class AssetAllocation(models.Model):
         return f"{self.asset.asset_name} → {self.employee}"
 
 
-class AssetHistory(models.Model):
-
-    public_id = models.UUIDField(
-        default=uuid.uuid4,
-        editable=False,
-        unique=True
-    )
+class AssetHistory(AuditBaseModel):
 
     asset = models.ForeignKey(
         Asset,

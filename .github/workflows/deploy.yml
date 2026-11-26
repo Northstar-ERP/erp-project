@@ -1,0 +1,148 @@
+
+name: ERP Production CI/CD
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: erp-production-deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build and Deploy to AWS EC2
+    runs-on: ubuntu-latest
+
+    env:
+      EC2_HOST: ${{ secrets.EC2_HOST }}
+      EC2_USER: ${{ secrets.EC2_USER }}
+      EC2_DEPLOY_PATH: ${{ secrets.EC2_DEPLOY_PATH }}
+
+    steps:
+      # 1. Get the latest main branch code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Install Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # 3. Build React frontend
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build React frontend
+        working-directory: frontend
+        env:
+          VITE_API_BASE_URL: /api/
+        run: npm run build
+
+      # 4. Validate Django Docker image
+      - name: Build Django Docker image
+        run: docker build -t erp-backend-ci ./backend
+
+      # 5. Configure SSH securely
+      - name: Configure SSH
+        env:
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+          printf '%s\n' "$EC2_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+          ssh-keygen -F "$EC2_HOST" -f ~/.ssh/known_hosts
+
+      # 6. Transfer updated source and React build to EC2
+      - name: Transfer project to EC2
+        run: |
+          rsync -az \
+            --exclude='.git/' \
+            --exclude='.env' \
+            --exclude='.env.*' \
+            --exclude='**/.env' \
+            --exclude='**/.env.*' \
+            --exclude='frontend/node_modules/' \
+            --exclude='frontend/.vite/' \
+            --exclude='backend/.venv/' \
+            --exclude='**/__pycache__/' \
+            --exclude='*.pyc' \
+            --exclude='backend/staticfiles/' \
+            --exclude='backend/media/' \
+            -e "ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o StrictHostKeyChecking=yes" \
+            ./ "$EC2_USER@$EC2_HOST:$EC2_DEPLOY_PATH/"
+
+      # 7. Rebuild and restart application on EC2
+      - name: Deploy application on EC2
+        run: |
+          ssh -i ~/.ssh/id_ed25519 \
+            -o IdentitiesOnly=yes \
+            -o UserKnownHostsFile=~/.ssh/known_hosts \
+            -o StrictHostKeyChecking=yes \
+            "$EC2_USER@$EC2_HOST" \
+            "DEPLOY_PATH='$EC2_DEPLOY_PATH' bash -s" <<'REMOTE'
+
+          set -e
+
+          cd "$DEPLOY_PATH"
+
+          echo "Building and starting Docker services..."
+
+          sudo docker compose \
+            --env-file .env \
+            -f deploy/docker-compose.yml \
+            up -d --build
+
+          echo "Running Django migrations..."
+
+          sudo docker compose \
+            --env-file .env \
+            -f deploy/docker-compose.yml \
+            exec -T web python manage.py migrate --noinput
+
+          echo "Collecting static files..."
+
+          sudo docker compose \
+            --env-file .env \
+            -f deploy/docker-compose.yml \
+            exec -T web python manage.py collectstatic --noinput
+
+          echo "Checking Django configuration..."
+
+          sudo docker compose \
+            --env-file .env \
+            -f deploy/docker-compose.yml \
+            exec -T web python manage.py check
+
+          echo "Checking application response..."
+
+          curl -fsS http://127.0.0.1/ -o /dev/null
+
+          echo "Deployment completed successfully!"
+
+          REMOTE
+
+      # 8. Show running containers
+      - name: Verify Docker services
+        run: |
+          ssh -i ~/.ssh/id_ed25519 \
+            -o IdentitiesOnly=yes \
+            -o UserKnownHostsFile=~/.ssh/known_hosts \
+            -o StrictHostKeyChecking=yes \
+            "$EC2_USER@$EC2_HOST" \
+            "sudo docker ps --filter name=erp_"
