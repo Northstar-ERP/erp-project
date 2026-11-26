@@ -195,7 +195,7 @@ export default function LoginPage() {
               <div>
                 <p className="text-xs font-semibold text-slate-800">Protected Enterprise Session</p>
                 <p className="text-[10px] text-slate-500">
-                  Secured with in-memory tokens and automated refresh handling.
+                  Short-lived access tokens with tab-scoped session refresh.
                 </p>
               </div>
             </div>

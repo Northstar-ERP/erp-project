@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { client, unwrapList } from '../../api/client';
 import type { LeaveRequest, Project, Task } from '../../api/types';
-import { displayError, formatDate } from '../../components/format';
+import { displayError, formatDate, toLocalISODate } from '../../components/format';
 import {
   Button,
   Card,
@@ -28,7 +28,7 @@ export default function ScheduleCalendarPage() {
   const [projectFilter, setProjectFilter] = useState('');
   const [updatingTaskId, setUpdatingTaskId] = useState<string | null>(null);
 
-  const [todayStr] = useState(() => new Date().toISOString().slice(0, 10));
+  const [todayStr] = useState(() => toLocalISODate());
 
   const loadData = useCallback(async () => {
     try {
@@ -180,19 +180,6 @@ export default function ScheduleCalendarPage() {
       {error && <ErrorMessage>{error}</ErrorMessage>}
       {success && <SuccessMessage>{success}</SuccessMessage>}
 
-      {/* Backend Scheduling Notice */}
-      <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-4 text-xs text-blue-900 flex items-start gap-3">
-        <Icon name="info" size={18} className="text-blue-600 shrink-0 mt-0.5" />
-        <div className="leading-relaxed">
-          <p className="font-bold text-blue-950">Persisted Scheduling Model</p>
-          <p className="mt-0.5 text-blue-800 text-[11px]">
-            The existing ERP backend stores dates (YYYY-MM-DD) for project start/end dates and task
-            deadlines. Time-of-day clock scheduling (hours/minutes) is not supported by the backend
-            schema and is safely omitted to ensure consistent, persisted records.
-          </p>
-        </div>
-      </div>
-
       {/* Legend & Filter Controls */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
         <div className="flex flex-wrap items-center gap-4 text-xs">
@@ -289,7 +276,7 @@ export default function ScheduleCalendarPage() {
                   {Array.from({ length: daysInMonth }).map((_, idx) => {
                     const dayNum = idx + 1;
                     const dateObj = new Date(year, month, dayNum);
-                    const dateStr = dateObj.toISOString().slice(0, 10);
+                    const dateStr = toLocalISODate(dateObj);
                     const isToday = dateStr === todayStr;
                     const dayTasks = tasksByDeadline.get(dateStr) || [];
                     const dayLeaves = leavesOnDate(dateStr);

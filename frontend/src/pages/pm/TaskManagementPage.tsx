@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { client, unwrapList } from '../../api/client';
+import { isProjectAssignable } from '../../utils/managers';
 import type { Employee, LeaveRequest, Project, Task } from '../../api/types';
-import { displayError, formatDate, initials } from '../../components/format';
+import { displayError, formatDate, initials, toLocalISODate } from '../../components/format';
 import { useAuth } from '../../context/auth';
 import {
   calculateEmployeeAvailability,
@@ -56,11 +57,11 @@ export default function TaskManagementPage() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
 
-  const [todayStr] = useState(() => new Date().toISOString().slice(0, 10));
+  const [todayStr] = useState(() => toLocalISODate());
   const [nextWeekStr] = useState(() => {
     const nextWeek = new Date();
     nextWeek.setDate(nextWeek.getDate() + 7);
-    return nextWeek.toISOString().slice(0, 10);
+    return toLocalISODate(nextWeek);
   });
   const loadData = useCallback(async () => {
     try {
@@ -388,20 +389,6 @@ export default function TaskManagementPage() {
 
       {error && <ErrorMessage>{error}</ErrorMessage>}
       {success && <SuccessMessage>{success}</SuccessMessage>}
-
-      {/* Backend Compatibility Banner */}
-      <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-4 text-xs text-blue-900 flex items-start gap-3">
-        <Icon name="info" size={18} className="text-blue-600 shrink-0 mt-0.5" />
-        <div className="leading-relaxed">
-          <p className="font-bold text-blue-950">Backend Scheduling Compatibility</p>
-          <p className="mt-0.5 text-blue-800 text-[11px]">
-            The current ERP API schema supports project association, employee assignments, delivery
-            deadlines (calendar dates), and lifecycle statuses (To Do, In Progress, Review, Done).
-            Task priorities, start times, and estimated effort hours are not stored in the backend
-            schema and are omitted to avoid unpersisted data.
-          </p>
-        </div>
-      </div>
 
       {/* KPI Deck */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
@@ -739,7 +726,7 @@ export default function TaskManagementPage() {
             <div className="grid gap-3.5 sm:grid-cols-2">
               <SelectField label="Assignee Team Member" name="assigned_to" defaultValue="">
                 <option value="">Unassigned</option>
-                {employees.map((emp) => {
+                {employees.filter(isProjectAssignable).map((emp) => {
                   const avail = availabilityMap.get(emp.public_id);
                   const tag = avail ? ` [${avail.status}]` : '';
                   return (
@@ -821,7 +808,7 @@ export default function TaskManagementPage() {
                 }
               >
                 <option value="">Unassigned</option>
-                {employees.map((emp) => {
+                {employees.filter(isProjectAssignable).map((emp) => {
                   const avail = availabilityMap.get(emp.public_id);
                   const tag = avail ? ` [${avail.status}]` : '';
                   return (

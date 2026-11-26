@@ -21,7 +21,7 @@ def is_hr_or_admin(user):
         user.is_authenticated
         and (
             user.is_superuser
-            or role_name in {"admin", "hr"}
+            or role_name in {"admin", "hr", "system admin", "hr manager"}
         )
     )
 
@@ -34,7 +34,7 @@ def is_manager(user):
 
     return bool(
         user.is_authenticated
-        and role_name == "manager"
+        and role_name in {"manager", "department / project manager"}
     )
 
 

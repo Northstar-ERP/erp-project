@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { client, unwrapList } from '../api/client';
 import type { Branch, Company, Department, Employee } from '../api/types';
 import { displayError, formatDate } from '../components/format';
+import { useAuth } from '../context/auth';
 import { getEmployeeRoleName } from '../utils/managers';
 import {
   Card,
@@ -26,6 +27,13 @@ type OrgDirectoryData = {
 const PAGE_SIZE = 10;
 
 export default function AdminEmployeeDirectoryPage() {
+  const { user, hasRole } = useAuth();
+  const isAdmin = Boolean(
+    user?.is_superuser || user?.role_name === 'System Admin' || hasRole(['System Admin']),
+  );
+  const isHR = Boolean(user?.role_name === 'HR Manager' || hasRole(['HR Manager']));
+  const canViewOrg = isAdmin || isHR;
+
   const [activeTab, setActiveTab] = useState<'employees' | 'structure'>('employees');
   const [data, setData] = useState<OrgDirectoryData>({
     companies: [],
@@ -52,9 +60,9 @@ export default function AdminEmployeeDirectoryPage() {
   const load = useCallback(async () => {
     try {
       const [companiesRes, branchesRes, departmentsRes, employeesRes] = await Promise.allSettled([
-        client.companies(),
-        client.branches(),
-        client.departments(),
+        canViewOrg ? client.companies() : Promise.resolve({ data: [] } as any),
+        canViewOrg ? client.branches() : Promise.resolve({ data: [] } as any),
+        canViewOrg ? client.departments() : Promise.resolve({ data: [] } as any),
         client.employees(),
       ]);
 
@@ -73,7 +81,7 @@ export default function AdminEmployeeDirectoryPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [canViewOrg]);
 
   useEffect(() => {
     void Promise.resolve().then(load);

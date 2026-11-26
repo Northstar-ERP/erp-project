@@ -1,4 +1,5 @@
 from django.db import transaction
+from django.db.models import Prefetch
 from rest_framework import permissions
 from apps.utils.permissions import IsProjectManager, IsSystemAdmin
 from apps.utils.views import AuditModelViewSet
@@ -25,7 +26,17 @@ class ProjectViewSet(AuditModelViewSet):
             'manager',
             'manager__user',
             'manager__user__role',
-            'manager__department',
+            'manager__department__branch__company',
+        ).prefetch_related(
+            # Feeds ProjectSerializer.team_members without a query per project.
+            Prefetch(
+                'tasks',
+                queryset=Task.objects.filter(assigned_to__isnull=False).select_related(
+                    'assigned_to__user__role',
+                    'assigned_to__department__branch__company',
+                ),
+                to_attr='team_tasks',
+            ),
         ).order_by('-created_at')
 
         if not user.is_authenticated:
@@ -71,7 +82,7 @@ class ProjectViewSet(AuditModelViewSet):
     def trash(self, request):
         qs = Project.all_objects.filter(is_deleted=True).select_related(
             'created_by', 'manager', 'manager__user', 'manager__user__role',
-            'manager__department',
+            'manager__department__branch__company',
         ).order_by('-deleted_at')
         return Response(self.get_serializer(qs, many=True).data)
 
@@ -99,6 +110,9 @@ class TaskPermission(permissions.BasePermission):
         if role_name in ['System Admin', 'Department / Project Manager']:
             return True
 
+        if role_name == 'HR Manager':
+            return request.method in permissions.SAFE_METHODS
+
         if role_name == 'Employee':
             if request.method in permissions.SAFE_METHODS:
                 return True
@@ -119,6 +133,9 @@ class TaskPermission(permissions.BasePermission):
 
         if role_name in ['System Admin', 'Department / Project Manager']:
             return True
+
+        if role_name == 'HR Manager':
+            return request.method in permissions.SAFE_METHODS
 
         if role_name == 'Employee':
             if request.method in permissions.SAFE_METHODS:

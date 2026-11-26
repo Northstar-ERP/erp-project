@@ -81,3 +81,8 @@ export function isEmployeeManager(
 
   return Boolean(emp.is_manager);
 }
+
+/** HR staff do not work on projects, so they cannot be assigned project tasks. */
+export function isProjectAssignable(emp: Employee): boolean {
+  return emp.role_name !== 'HR Manager';
+}

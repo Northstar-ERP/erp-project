@@ -81,6 +81,7 @@ export interface Project {
   end_date?: string | null;
   manager?: string | null;
   manager_details?: Employee | null;
+  team_members?: Employee[];
   created_at?: string;
   updated_at?: string;
 }
@@ -208,4 +209,31 @@ export interface Department {
   head?: string | null;
   head_name?: string | null;
   head_email?: string | null;
+}
+
+export interface AttendanceRecord {
+  id: number;
+  employee: number;
+  employee_public_id: string;
+  employee_name: string;
+  work_date: string;
+  check_in: string | null;
+  check_out: string | null;
+  status: 'PRESENT' | 'LATE' | 'HALF_DAY' | 'ABSENT';
+  notes: string;
+  worked_minutes: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AppNotification {
+  public_id: string;
+  notification_type: 'leave' | 'expense' | 'task' | 'deadline' | 'project' | 'asset' | 'system';
+  title: string;
+  message: string;
+  link: string;
+  related_public_id: string | null;
+  is_read: boolean;
+  read_at: string | null;
+  created_at: string;
 }

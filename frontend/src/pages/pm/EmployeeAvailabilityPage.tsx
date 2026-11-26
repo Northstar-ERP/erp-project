@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { client, unwrapList } from '../../api/client';
 import type { Employee, LeaveRequest, Project, Task } from '../../api/types';
-import { displayError, formatDate, initials } from '../../components/format';
+import { displayError, formatDate, initials, toLocalISODate } from '../../components/format';
 import { useAuth } from '../../context/auth';
 import {
   calculateEmployeeAvailability,
@@ -37,11 +37,11 @@ export default function EmployeeAvailabilityPage() {
   const [success, setSuccess] = useState('');
 
   // Date range filters for availability evaluation
-  const [todayStr] = useState(() => new Date().toISOString().slice(0, 10));
+  const [todayStr] = useState(() => toLocalISODate());
   const [defaultEndStr] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() + 14);
-    return d.toISOString().slice(0, 10);
+    return toLocalISODate(d);
   });
 
   const [periodStart, setPeriodStart] = useState(todayStr);
@@ -79,7 +79,10 @@ export default function EmployeeAvailabilityPage() {
         client.projects(),
         client.leaveRequests(),
       ]);
-      setEmployees(unwrapList(empRes.data));
+      // HR staff do not work on projects, so they are left out of availability planning.
+      setEmployees(
+        unwrapList(empRes.data).filter((emp) => emp.role_name !== 'HR Manager'),
+      );
       setTasks(unwrapList(taskRes.data));
       setProjects(unwrapList(projRes.data));
       setLeaves(unwrapList(leaveRes.data));
@@ -204,7 +207,7 @@ export default function EmployeeAvailabilityPage() {
     const end = new Date();
     end.setDate(end.getDate() + days);
     setPeriodStart(start);
-    setPeriodEnd(end.toISOString().slice(0, 10));
+    setPeriodEnd(toLocalISODate(end));
     setPage(1);
   };
 

@@ -7,12 +7,14 @@ from .models import AttendanceRecord
 class AttendanceRecordSerializer(serializers.ModelSerializer):
     employee_name = serializers.SerializerMethodField()
     worked_minutes = serializers.ReadOnlyField()
+    employee_public_id = serializers.UUIDField(source="employee.public_id", read_only=True)
 
     class Meta:
         model = AttendanceRecord
         fields = [
             "id",
             "employee",
+            "employee_public_id",
             "employee_name",
             "work_date",
             "check_in",

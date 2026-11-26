@@ -6,6 +6,7 @@ from .models import Project, Task
 
 class ProjectSerializer(serializers.ModelSerializer):
     manager_details = EmployeeDirectorySerializer(source='manager', read_only=True)
+    team_members = serializers.SerializerMethodField()
 
     manager = serializers.SlugRelatedField(
         slug_field='public_id',
@@ -17,16 +18,42 @@ class ProjectSerializer(serializers.ModelSerializer):
         model = Project
         fields = [
             'public_id', 'name', 'description',
-            'manager', 'manager_details',
+            'manager', 'manager_details', 'team_members',
             'start_date', 'end_date', 'status',
             'created_at', 'updated_at',
         ]
         read_only_fields = [
             'public_id',
             'manager_details',
+            'team_members',
             'created_at',
             'updated_at',
         ]
+
+    def get_team_members(self, obj):
+        """Everyone with a live task on the project (excluding the project manager)."""
+        prefetched = getattr(obj, 'team_tasks', None)
+        if prefetched is not None:
+            seen, members = set(), []
+            for task in prefetched:
+                emp = task.assigned_to
+                if emp is None or emp.is_deleted or emp.pk == obj.manager_id or emp.pk in seen:
+                    continue
+                seen.add(emp.pk)
+                members.append(emp)
+            members.sort(key=lambda e: (e.first_name, e.last_name))
+            return EmployeeDirectorySerializer(members, many=True).data
+        members = (
+            Employee.objects.filter(
+                tasks__project=obj,
+                tasks__is_deleted=False,
+            )
+            .exclude(pk=obj.manager_id)
+            .select_related('user__role', 'department__branch__company')
+            .distinct()
+            .order_by('first_name', 'last_name')
+        )
+        return EmployeeDirectorySerializer(members, many=True).data
 
     def validate(self, attrs):
         start_date = attrs.get(
@@ -90,6 +117,14 @@ class TaskSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at',
         ]
+
+    def validate_assigned_to(self, value):
+        role = getattr(getattr(value, 'user', None), 'role', None)
+        if role and role.role_name == 'HR Manager':
+            raise serializers.ValidationError(
+                'HR staff cannot be assigned project tasks.'
+            )
+        return value
 
     def validate(self, attrs):
         project = attrs.get(

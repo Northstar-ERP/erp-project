@@ -30,6 +30,7 @@ export default function LeavePage() {
     user?.is_superuser || user?.role_name === 'System Admin' || hasRole(['System Admin']),
   );
   const isHR = user?.role_name === 'HR Manager' || hasRole(['HR Manager']);
+  const canViewOrg = isAdmin || isHR;
   const isPM =
     user?.role_name === 'Department / Project Manager' ||
     hasRole(['Department / Project Manager']);
@@ -84,7 +85,7 @@ export default function LeavePage() {
         client.leaveRequests(),
         client.leaveTypes(),
         client.employees(),
-        client.departments(),
+        canViewOrg ? client.departments() : Promise.resolve({ data: [] } as any),
       ]);
 
       if (reqRes.status === 'fulfilled') {
@@ -106,7 +107,7 @@ export default function LeavePage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [canViewOrg]);
 
   useEffect(() => {
     void Promise.resolve().then(load);
@@ -293,12 +294,16 @@ export default function LeavePage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow={isAdmin ? 'Organization Monitoring' : 'Leave Administration'}
-        title="Leave Management & Approval"
+        eyebrow={
+          isAdmin ? 'Organization Monitoring' : canApproveOrReject ? 'Leave Administration' : 'Self Service'
+        }
+        title={canApproveOrReject ? 'Leave Management & Approval' : 'My Leave'}
         description={
           isAdmin
             ? 'Monitor leave applications across the organization, review historical approval decisions, and audit reviewer comments.'
-            : 'Review employee leave applications, execute authorized approvals or rejections, and verify department coverage.'
+            : canApproveOrReject
+              ? 'Review employee leave applications, execute authorized approvals or rejections, and verify department coverage.'
+              : 'Request time off, track the status of your applications, and review your leave history.'
         }
         action={
           canSubmitLeave ? (
@@ -411,9 +416,9 @@ export default function LeavePage() {
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <span>Pending Action</span>
+              <span>{canApproveOrReject ? 'Pending Action' : 'Pending'}</span>
               {pendingCount > 0 && (
-                <span className="rounded-full bg-amber-500 px-1.5 py-0.2 text-[10px] text-white">
+                <span className="rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] leading-none text-white">
                   {pendingCount}
                 </span>
               )}
@@ -475,22 +480,29 @@ export default function LeavePage() {
         </div>
 
         {/* Filter Controls Row */}
-        <div className="grid gap-3 border-b border-slate-100 bg-white p-4 sm:grid-cols-2 lg:grid-cols-5 text-xs">
-          <SelectField
-            label="Filter Department"
-            value={departmentFilter}
-            onChange={(e) => {
-              setDepartmentFilter(e.target.value);
-              setPage(1);
-            }}
-          >
-            <option value="">All Departments</option>
-            {departments.map((d) => (
-              <option key={d.public_id} value={d.name}>
-                {d.name}
-              </option>
-            ))}
-          </SelectField>
+        <div
+          className={`grid gap-3 border-b border-slate-100 bg-white p-4 sm:grid-cols-2 text-xs ${
+            canApproveOrReject ? 'lg:grid-cols-5' : 'lg:grid-cols-4'
+          }`}
+        >
+          {/* Employees only see their own requests, so a department filter adds nothing. */}
+          {canApproveOrReject && (
+            <SelectField
+              label="Filter Department"
+              value={departmentFilter}
+              onChange={(e) => {
+                setDepartmentFilter(e.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="">All Departments</option>
+              {departments.map((d) => (
+                <option key={d.public_id} value={d.name}>
+                  {d.name}
+                </option>
+              ))}
+            </SelectField>
+          )}
 
           <SelectField
             label="Filter Leave Type"

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { client, unwrapList } from '../api/client';
 import type { Department, Employee, Expense, ExpenseCategory } from '../api/types';
-import { displayError, formatDate } from '../components/format';
+import { displayError, formatDate, formatINR, toLocalISODate } from '../components/format';
 import { useAuth } from '../context/auth';
 import {
   Button,
@@ -31,6 +31,7 @@ export default function ExpensesPage() {
     user?.is_superuser || user?.role_name === 'System Admin' || hasRole(['System Admin']),
   );
   const isHR = user?.role_name === 'HR Manager' || hasRole(['HR Manager']);
+  const canViewOrg = isAdmin || isHR;
   const isPM =
     user?.role_name === 'Department / Project Manager' ||
     hasRole(['Department / Project Manager']);
@@ -75,7 +76,7 @@ export default function ExpensesPage() {
   const [endDateFilter, setEndDateFilter] = useState('');
   const [page, setPage] = useState(1);
 
-  const [today] = useState(() => new Date().toISOString().slice(0, 10));
+  const [today] = useState(() => toLocalISODate());
 
   const activeCategories = useMemo(
     () => allCategories.filter((c) => c.is_active),
@@ -98,7 +99,7 @@ export default function ExpensesPage() {
         client.expenses(),
         client.expenseCategories(),
         client.employees(),
-        client.departments(),
+        canViewOrg ? client.departments() : Promise.resolve({ data: [] } as any),
       ]);
       if (expRes.status === 'fulfilled') {
         setExpenses(unwrapList(expRes.value.data));
@@ -119,7 +120,7 @@ export default function ExpensesPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [canViewOrg]);
 
   useEffect(() => {
     void Promise.resolve().then(load);
@@ -413,7 +414,7 @@ export default function ExpensesPage() {
             </span>
             <div>
               <p className="text-2xl font-bold text-slate-900">
-                ${totalClaimAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {formatINR(totalClaimAmount)}
               </p>
               <p className="text-xs text-slate-500 font-medium">Total Claim Volume</p>
             </div>
@@ -813,7 +814,7 @@ export default function ExpensesPage() {
                             </td>
 
                             <td className="px-5 py-3.5 font-mono text-xs font-bold text-slate-900">
-                              ${Number(expense.amount).toFixed(2)}
+                              {formatINR(expense.amount)}
                             </td>
 
                             <td className="px-5 py-3.5">
@@ -922,7 +923,7 @@ export default function ExpensesPage() {
               ? 'Approve Expense Claim'
               : 'Reject Expense Claim'
           }
-          description={`${decisionTarget.expense.employee_name || 'Employee'} · $${Number(decisionTarget.expense.amount).toFixed(2)} (${decisionTarget.expense.category_name || ''})`}
+          description={`${decisionTarget.expense.employee_name || 'Employee'} · ${formatINR(decisionTarget.expense.amount)} (${decisionTarget.expense.category_name || ''})`}
           onClose={() => setDecisionTarget(null)}
         >
           <form className="space-y-4" onSubmit={handleDecisionSubmit}>
@@ -996,7 +997,7 @@ export default function ExpensesPage() {
               <div className="rounded-lg border border-slate-200 p-3 bg-white">
                 <p className="text-[10px] font-semibold uppercase text-slate-400">Total Claim Amount</p>
                 <p className="mt-1 font-mono text-base font-bold text-slate-900">
-                  ${Number(selectedExpense.amount).toFixed(2)}
+                  {formatINR(selectedExpense.amount)}
                 </p>
               </div>
               <div className="rounded-lg border border-slate-200 p-3 bg-white">
@@ -1083,7 +1084,7 @@ export default function ExpensesPage() {
 
             <div className="grid gap-3.5 sm:grid-cols-2">
               <Field
-                label="Amount (USD)"
+                label="Amount (INR ₹)"
                 name="amount"
                 type="number"
                 min="0.01"
@@ -1154,7 +1155,7 @@ export default function ExpensesPage() {
 
             <div className="grid gap-3.5 sm:grid-cols-2">
               <Field
-                label="Amount (USD)"
+                label="Amount (INR ₹)"
                 name="amount"
                 type="number"
                 min="0.01"
@@ -1260,7 +1261,7 @@ export default function ExpensesPage() {
         <ConfirmDialog
           isOpen={true}
           title="Delete Expense Claim"
-          description={`Are you sure you want to delete your pending expense claim (${expenseToDelete.category_name || ''}, $${Number(expenseToDelete.amount).toFixed(2)})?`}
+          description={`Are you sure you want to delete your pending expense claim (${expenseToDelete.category_name || ''}, ${formatINR(expenseToDelete.amount)})?`}
           confirmLabel="Delete Expense"
           isDestructive={true}
           isLoading={saving}

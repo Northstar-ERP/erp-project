@@ -1,19 +1,19 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { client, unwrapList } from '../api/client';
 import type { Branch, Company, Department, Employee, Role } from '../api/types';
-import { displayError } from '../components/format';
+import { displayError, toLocalISODate } from '../components/format';
 import { OrgHierarchySelect } from '../components/OrgHierarchySelect';
 import { useAuth } from '../context/auth';
 import {
   deriveHierarchyForEmployee,
   getEmployeeRoleName,
   isEmployeeManager,
-  isRoleManager,
   type HierarchySelection,
 } from '../utils/managers';
 import {
   Button,
   Card,
+  ConfirmDialog,
   EmptyState,
   ErrorMessage,
   Field,
@@ -34,6 +34,7 @@ export default function ManagersPage() {
   const { hasRole, user: currentUser } = useAuth();
   const canCreateDepartment =
     hasRole(['System Admin', 'HR Manager']) || Boolean(currentUser?.is_superuser);
+  const isAdmin = hasRole(['System Admin']) || Boolean(currentUser?.is_superuser);
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -49,6 +50,8 @@ export default function ManagersPage() {
   const [editManager, setEditManager] = useState<Employee | null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
+  const [managerToDelete, setManagerToDelete] = useState<Employee | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Add Manager Form State
   const [addHierarchy, setAddHierarchy] = useState<HierarchySelection>({
@@ -78,22 +81,23 @@ export default function ManagersPage() {
   const [roleFilter, setRoleFilter] = useState('');
   const [page, setPage] = useState(1);
 
-  const [today] = useState(() => new Date().toISOString().slice(0, 10));
+  const [today] = useState(() => toLocalISODate());
 
   const load = useCallback(async () => {
     try {
-      const [empRes, compRes, deptRes, roleRes, branchRes] = await Promise.all([
+      const [empRes, compRes, deptRes, roleRes, branchRes] = await Promise.allSettled([
         client.employees(),
         client.companies(),
         client.departments(),
         client.roles(),
         client.branches(),
       ]);
-      setEmployees(unwrapList(empRes.data));
-      setCompanies(unwrapList(compRes.data));
-      setDepartments(unwrapList(deptRes.data));
-      setRoles(unwrapList(roleRes.data));
-      setBranches(unwrapList(branchRes.data));
+      if (empRes.status === 'fulfilled') setEmployees(unwrapList(empRes.value.data));
+      else setError(displayError(empRes.reason));
+      if (compRes.status === 'fulfilled') setCompanies(unwrapList(compRes.value.data));
+      if (deptRes.status === 'fulfilled') setDepartments(unwrapList(deptRes.value.data));
+      if (roleRes.status === 'fulfilled') setRoles(unwrapList(roleRes.value.data));
+      if (branchRes.status === 'fulfilled') setBranches(unwrapList(branchRes.value.data));
     } catch (cause) {
       setError(displayError(cause));
     } finally {
@@ -242,6 +246,23 @@ export default function ManagersPage() {
       Boolean(currentDept?.head === manager.public_id || manager.is_department_head),
     );
     setEditManager(manager);
+  };
+
+  const executeDeleteManager = async (manager: Employee) => {
+    setDeleting(true);
+    setError('');
+    setSuccess('');
+    try {
+      await client.deleteEmployee(manager.public_id);
+      setManagerToDelete(null);
+      setSuccess(`Manager "${manager.first_name} ${manager.last_name}" has been deleted and their login deactivated.`);
+      await load();
+    } catch (cause) {
+      setManagerToDelete(null);
+      setError(displayError(cause));
+    } finally {
+      setDeleting(false);
+    }
   };
 
   // Add Manager Workflow: Atomic single-transaction creation of User + Employee + optional leadership
@@ -591,7 +612,6 @@ export default function ManagersPage() {
                     <th className="px-5 py-3">Manager Name</th>
                     <th className="px-5 py-3">Department, Branch & Org</th>
                     <th className="px-5 py-3">Role & Title</th>
-                    <th className="px-5 py-3">Leadership Status</th>
                     <th className="px-5 py-3">Status</th>
                     <th className="px-5 py-3 text-right">Actions</th>
                   </tr>
@@ -603,16 +623,6 @@ export default function ManagersPage() {
                     const branchObj = deptObj?.branch ? branchMap.get(deptObj.branch) : null;
                     const branchLabel = manager.branch_name || branchObj?.name || deptObj?.branch_name;
                     const companyLabel = manager.company_name || branchObj?.company_name || deptObj?.company_name;
-
-                    // Leadership qualifications (real data)
-                    const managedBranch = branches.find((b) => b.manager === manager.public_id);
-                    const isBranchMgr = Boolean(managedBranch || manager.is_branch_manager);
-                    const headedDept = departments.find((d) => d.head === manager.public_id);
-                    const isDeptHead = Boolean(headedDept || manager.is_department_head);
-                    const subCount =
-                      manager.subordinates_count ??
-                      employees.filter((e) => e.manager === manager.public_id).length;
-                    const roleIsMgr = isRoleManager(roleName);
 
                     return (
                       <tr key={manager.public_id} className="hover:bg-slate-50/70 transition">
@@ -652,40 +662,27 @@ export default function ManagersPage() {
                           </span>
                         </td>
                         <td className="px-5 py-3.5">
-                          <div className="flex flex-wrap gap-1">
-                            {isBranchMgr && (
-                              <span className="rounded-md bg-purple-50 px-1.5 py-0.5 text-[10px] font-bold text-purple-700 border border-purple-200">
-                                Branch Mgr{managedBranch ? `: ${managedBranch.name}` : ''}
-                              </span>
-                            )}
-                            {isDeptHead && (
-                              <span className="rounded-md bg-indigo-50 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700 border border-indigo-200">
-                                Dept Head{headedDept ? `: ${headedDept.name}` : ''}
-                              </span>
-                            )}
-                            {subCount > 0 && (
-                              <span className="rounded-md bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-700 border border-blue-200">
-                                {subCount} Direct Report{subCount === 1 ? '' : 's'}
-                              </span>
-                            )}
-                            {roleIsMgr && !isBranchMgr && !isDeptHead && subCount === 0 && (
-                              <span className="rounded-md bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200">
-                                Role: {roleName}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-5 py-3.5">
                           <StatusBadge status={manager.employment_status} />
                         </td>
                         <td className="px-5 py-3.5 text-right">
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={() => openEditModal(manager)}
-                          >
-                            <Icon name="edit" size={13} /> Edit
-                          </Button>
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => openEditModal(manager)}
+                            >
+                              <Icon name="edit" size={13} /> Edit
+                            </Button>
+                            {isAdmin && manager.user_details?.public_id !== currentUser?.public_id && (
+                              <Button
+                                size="sm"
+                                variant="outline-danger"
+                                onClick={() => setManagerToDelete(manager)}
+                              >
+                                <Icon name="trash" size={13} /> Delete
+                              </Button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -704,6 +701,21 @@ export default function ManagersPage() {
           </>
         )}
       </Card>
+
+      <ConfirmDialog
+        isOpen={Boolean(managerToDelete)}
+        title="Delete manager"
+        description={
+          managerToDelete
+            ? `Delete ${managerToDelete.first_name} ${managerToDelete.last_name}? Their login will be deactivated, they will be removed as branch manager / department head, and anyone reporting to them will be left without a reporting manager.`
+            : ''
+        }
+        confirmLabel="Delete Manager"
+        isDestructive
+        isLoading={deleting}
+        onConfirm={() => managerToDelete && void executeDeleteManager(managerToDelete)}
+        onCancel={() => setManagerToDelete(null)}
+      />
 
       {/* Modal: Add Manager */}
       {addModalOpen && (

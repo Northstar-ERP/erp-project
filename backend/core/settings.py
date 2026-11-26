@@ -105,7 +105,11 @@ WSGI_APPLICATION = 'core.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.1/ref/settings/#databases
 
-if any('test' in arg for arg in sys.argv):
+# Use an in-memory database only for `manage.py test` (not for any argument
+# that merely contains the word "test", e.g. `loaddata test_data.json`).
+RUNNING_TESTS = len(sys.argv) > 1 and sys.argv[1] == 'test'
+
+if RUNNING_TESTS:
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
@@ -117,6 +121,8 @@ if any('test' in arg for arg in sys.argv):
             'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
         }
     }
+    # Shared list caching needs Redis (pattern invalidation); off in tests.
+    MODEL_CACHE_ENABLED = False
 else:
     database_url = os.environ.get('DATABASE_URL', '').strip()
     if database_url:
@@ -134,7 +140,12 @@ else:
         db_password = os.environ.get('POSTGRES_PASSWORD', '')
         db_host = os.environ.get('POSTGRES_HOST', '')
 
-    is_pooler = db_port == '6543'
+    # Supabase pooler (pooler.supabase.com) requires port 6543 (transaction mode) for web concurrency.
+    # Port 5432 is session mode with max 15 clients (causing EMAXCONNSESSION).
+    if db_host and 'pooler.supabase.com' in db_host and db_port in ('5432', ''):
+        db_port = '6543'
+
+    is_pooler = db_port == '6543' or bool(db_host and 'pooler.supabase.com' in db_host)
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
@@ -151,30 +162,63 @@ else:
         }
     }
 
-    # Graceful Redis fallback - if Redis is unreachable, fall back to database
-    DJANGO_REDIS_IGNORE_EXCEPTIONS = True
+    # Redis is used for caching, throttling and sessions when it is reachable.
+    # If it is not (e.g. not running locally, or not deployed), every cache call
+    # would block on a connection timeout (~4s each on Windows), so fall back to
+    # an in-process cache and database sessions instead.
+    REDIS_URL = os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0").strip()
 
-    CACHES = {
-        "default": {
-            "BACKEND": "django_redis.cache.RedisCache",
-            "LOCATION": os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0"),
-            "KEY_PREFIX": "erp_v1",
-            "OPTIONS": {
-                "CLIENT_CLASS": "django_redis.client.DefaultClient",
-                "IGNORE_EXCEPTIONS": True,
-                "CONNECTION_POOL_KWARGS": {
-                    "max_connections": 50,
-                    "retry_on_timeout": True,
+    def _redis_reachable(url):
+        import socket
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        try:
+            socket.create_connection(
+                (parsed.hostname or "127.0.0.1", parsed.port or 6379), timeout=0.5
+            ).close()
+            return True
+        except OSError:
+            return False
+
+    USE_REDIS = bool(REDIS_URL) and _redis_reachable(REDIS_URL)
+
+    if USE_REDIS:
+        DJANGO_REDIS_IGNORE_EXCEPTIONS = True
+        CACHES = {
+            "default": {
+                "BACKEND": "django_redis.cache.RedisCache",
+                "LOCATION": REDIS_URL,
+                "KEY_PREFIX": "erp_v1",
+                "OPTIONS": {
+                    "CLIENT_CLASS": "django_redis.client.DefaultClient",
+                    "IGNORE_EXCEPTIONS": True,
+                    "CONNECTION_POOL_KWARGS": {
+                        "max_connections": 50,
+                        "retry_on_timeout": True,
+                    },
+                    "SOCKET_CONNECT_TIMEOUT": 1,
+                    "SOCKET_TIMEOUT": 1,
                 },
-                "SOCKET_CONNECT_TIMEOUT": 5,
-                "SOCKET_TIMEOUT": 5,
-            },
+            }
         }
-    }
-
-    # Session caching in Redis (optional, for performance)
-    SESSION_ENGINE = "django.contrib.sessions.backends.cache"
-    SESSION_CACHE_ALIAS = "default"
+        SESSION_ENGINE = "django.contrib.sessions.backends.cache"
+        SESSION_CACHE_ALIAS = "default"
+        MODEL_CACHE_ENABLED = True
+    else:
+        import logging
+        logging.getLogger(__name__).warning(
+            "Redis at %s is unreachable; using in-process cache and database sessions.",
+            REDIS_URL,
+        )
+        CACHES = {
+            "default": {
+                "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+                "KEY_PREFIX": "erp_v1",
+            }
+        }
+        # Per-process caches cannot be invalidated across workers, so shared
+        # list caching is disabled rather than risk serving stale data.
+        MODEL_CACHE_ENABLED = False
 
 # Password validation
 # https://docs.djangoproject.com/en/6.1/ref/settings/#auth-password-validators
@@ -201,7 +245,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Asia/Kolkata'
 
 USE_I18N = True
 

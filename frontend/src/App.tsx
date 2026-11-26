@@ -1,32 +1,42 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import Layout from './components/layout/Layout';
 import { AuthProvider } from './context/AuthContext';
-import AssetsPage from './pages/AssetsPage';
-import AttendancePage from './pages/AttendancePage';
-// @ts-expect-error AnalyticsPage is implemented in JavaScript and has no declaration file.
-import AnalyticsPage from './pages/AnalyticsPage';
-import DashboardPage from './pages/DashboardPage';
-import ExpensesPage from './pages/ExpensesPage';
-import LeavePage from './pages/LeavePage';
-import LoginPage from './pages/LoginPage';
-import AccountActivationPage from './pages/AccountActivationPage';
-import OrganizationPage from './pages/OrganizationPage';
-import AdminEmployeeDirectoryPage from './pages/AdminEmployeeDirectoryPage';
-import OrganizationsPage from './pages/OrganizationsPage';
-import BranchesPage from './pages/BranchesPage';
-import ManagersPage from './pages/ManagersPage';
-import ProjectsPage from './pages/ProjectsPage';
-import ProjectManagerProjectsPage from './pages/pm/ProjectManagerProjectsPage';
-import ProjectTeamPage from './pages/pm/ProjectTeamPage';
-import TaskManagementPage from './pages/pm/TaskManagementPage';
-import EmployeeAvailabilityPage from './pages/pm/EmployeeAvailabilityPage';
-import ScheduleCalendarPage from './pages/pm/ScheduleCalendarPage';
 import { ProtectedRoute, RoleRoute } from './routes/ProtectedRoute';
+import { LoadingState } from './components/ui';
+
+// Pages are loaded on demand so the initial bundle stays small.
+const AssetsPage = lazy(() => import('./pages/AssetsPage'));
+const AttendancePage = lazy(() => import('./pages/AttendancePage'));
+const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
+const DashboardPage = lazy(() => import('./pages/DashboardPage'));
+const ExpensesPage = lazy(() => import('./pages/ExpensesPage'));
+const LeavePage = lazy(() => import('./pages/LeavePage'));
+const LoginPage = lazy(() => import('./pages/LoginPage'));
+const AccountActivationPage = lazy(() => import('./pages/AccountActivationPage'));
+const OrganizationPage = lazy(() => import('./pages/OrganizationPage'));
+const AdminEmployeeDirectoryPage = lazy(() => import('./pages/AdminEmployeeDirectoryPage'));
+const OrganizationsPage = lazy(() => import('./pages/OrganizationsPage'));
+const BranchesPage = lazy(() => import('./pages/BranchesPage'));
+const ManagersPage = lazy(() => import('./pages/ManagersPage'));
+const ProjectsPage = lazy(() => import('./pages/ProjectsPage'));
+const ProjectManagerProjectsPage = lazy(() => import('./pages/pm/ProjectManagerProjectsPage'));
+const ProjectTeamPage = lazy(() => import('./pages/pm/ProjectTeamPage'));
+const TaskManagementPage = lazy(() => import('./pages/pm/TaskManagementPage'));
+const EmployeeAvailabilityPage = lazy(() => import('./pages/pm/EmployeeAvailabilityPage'));
+const ScheduleCalendarPage = lazy(() => import('./pages/pm/ScheduleCalendarPage'));
 
 export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
+        <Suspense
+          fallback={
+            <div className="grid min-h-[50vh] place-items-center">
+              <LoadingState label="Loading…" />
+            </div>
+          }
+        >
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/activate" element={<AccountActivationPage />} />
@@ -34,7 +44,14 @@ export default function App() {
           <Route element={<ProtectedRoute />}>
             <Route element={<Layout />}>
               <Route path="/dashboard" element={<DashboardPage />} />
-              <Route path="/analytics" element={<AnalyticsPage />} />
+              <Route
+                path="/analytics"
+                element={
+                  <RoleRoute roles={['System Admin', 'HR Manager']}>
+                    <AnalyticsPage />
+                  </RoleRoute>
+                }
+              />
 
               {/* Dedicated Admin Management Routes */}
               <Route
@@ -176,6 +193,7 @@ export default function App() {
           </Route>
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
+        </Suspense>
       </BrowserRouter>
     </AuthProvider>
   );

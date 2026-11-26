@@ -6,6 +6,7 @@ import type {
   ApiListResponse,
   Asset,
   AssetAllocation,
+  AttendanceRecord,
   Branch,
   Company,
   Department,
@@ -16,7 +17,7 @@ import type {
   Task,
 } from '../api/types';
 import { useAuth } from '../context/auth';
-import { formatDate } from '../components/format';
+import { formatDate, formatINR, toLocalISODate } from '../components/format';
 import {
   Button,
   Card,
@@ -116,15 +117,42 @@ export default function DashboardPage() {
     }).format(new Date()),
   );
 
-  const [todayIso] = useState(() => new Date().toISOString().slice(0, 10));
+  const [todayIso] = useState(() => toLocalISODate());
   const [nextTwoWeeksIso] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() + 14);
-    return d.toISOString().slice(0, 10);
+    return toLocalISODate(d);
   });
+
+  const [checkedInToday, setCheckedInToday] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!isHR) return;
+    let active = true;
+    const now = new Date();
+    const localIso = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 10);
+    api
+      .get<ApiListResponse<AttendanceRecord>>(endpoints.attendance, {
+        params: { start_date: localIso, end_date: localIso },
+      })
+      .then(({ data: res }) => {
+        if (active) setCheckedInToday(unwrapList(res).filter((r) => r.check_in).length);
+      })
+      .catch(() => {
+        if (active) setCheckedInToday(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [isHR]);
 
   useEffect(() => {
     let active = true;
+
+    const canViewOrg = isAdmin || isHR;
+    const canViewTasks = isAdmin || isPM || isEmployee;
 
     // Load available endpoints with allSettled
     const requests = [
@@ -134,10 +162,10 @@ export default function DashboardPage() {
       loadEndpoint<AssetAllocation>(endpoints.allocations),
       loadEndpoint<LeaveRequest>(endpoints.leaveRequests),
       loadEndpoint<Expense>(endpoints.expenses),
-      loadEndpoint<Task>(endpoints.tasks),
-      loadEndpoint<Company>(endpoints.companies),
-      loadEndpoint<Branch>(endpoints.branches),
-      loadEndpoint<Department>(endpoints.departments),
+      canViewTasks ? loadEndpoint<Task>(endpoints.tasks) : Promise.resolve(null),
+      canViewOrg ? loadEndpoint<Company>(endpoints.companies) : Promise.resolve(null),
+      canViewOrg ? loadEndpoint<Branch>(endpoints.branches) : Promise.resolve(null),
+      canViewOrg ? loadEndpoint<Department>(endpoints.departments) : Promise.resolve(null),
     ] as const;
 
     Promise.allSettled(requests).then(
@@ -162,7 +190,7 @@ export default function DashboardPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [isAdmin, isHR, isPM, isEmployee]);
 
   // Compute metrics from real data
   const displayName = user?.first_name ? `${user.first_name}` : user?.username || 'Team Member';
@@ -498,7 +526,7 @@ export default function DashboardPage() {
           <StatTile
             label="Expense Claims"
             value={pendingExpensesCount}
-            subtext={`$${pendingExpensesAmount.toFixed(2)} awaiting audit`}
+            subtext={`${formatINR(pendingExpensesAmount)} awaiting audit`}
             icon="receipt"
             iconBg="bg-emerald-50"
             iconColor="text-emerald-700"
@@ -619,7 +647,7 @@ export default function DashboardPage() {
           />
           <StatTile
             label="My Expenses"
-            value={`$${myExpensesTotal.toFixed(2)}`}
+            value={formatINR(myExpensesTotal)}
             subtext={`${data.expenses?.length ?? 0} submitted claims`}
             icon="receipt"
             iconBg="bg-emerald-50"
@@ -757,7 +785,7 @@ export default function DashboardPage() {
                         Inspect <Icon name="arrow" size={12} />
                       </Link>
                     </div>
-                    <p className="text-2xl font-bold text-slate-900">${totalExpensesAmount.toFixed(2)}</p>
+                    <p className="text-2xl font-bold text-slate-900">{formatINR(totalExpensesAmount)}</p>
                     <p className="text-[11px] text-slate-500">
                       {pendingExpensesCount} claims awaiting audit • {approvedExpenses.length} processed
                     </p>
@@ -916,7 +944,7 @@ export default function DashboardPage() {
 
                         <div className="flex items-center gap-3">
                           <span className="font-mono text-xs font-bold text-slate-900">
-                            ${Number(exp.amount).toFixed(2)}
+                            {formatINR(exp.amount)}
                           </span>
                           <StatusBadge status={exp.status} />
                           <Link to="/expenses">
@@ -1575,7 +1603,7 @@ export default function DashboardPage() {
                     </span>
                     <div>
                       <p className="text-xs font-semibold text-slate-800">Expense Claims & Audit</p>
-                      <p className="text-[10px] text-slate-500">${totalExpensesAmount.toFixed(2)} total volume</p>
+                      <p className="text-[10px] text-slate-500">{formatINR(totalExpensesAmount)} total volume</p>
                     </div>
                   </div>
                   <Icon name="chevron" size={14} className="text-slate-400 group-hover:text-slate-600" />
@@ -1596,15 +1624,15 @@ export default function DashboardPage() {
                 </span>
               </div>
               <p className="mt-1 text-[11px] text-slate-500">
-                Workforce roster cross-referenced with approved leave records
+                Daily check-ins cross-referenced with approved leave records
               </p>
 
               <div className="mt-3 space-y-2.5 text-xs">
-                <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-2.5 text-[11px] text-amber-900">
-                  <p className="font-semibold">Notice: Biometric API Unavailable</p>
-                  <p className="mt-0.5 text-amber-800">
-                    The backend attendance module (<code className="font-mono">/api/attendance/</code>) is not yet deployed. Showing verified staffing data.
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-2.5 text-[11px] text-emerald-900">
+                  <p className="font-semibold">
+                    Checked in today: {checkedInToday ?? '—'} of {activeEmployeesCount}
                   </p>
+                  <p className="mt-0.5 text-emerald-800">Live from daily check-in / check-out records.</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 text-center">

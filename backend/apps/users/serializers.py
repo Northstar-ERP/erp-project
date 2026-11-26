@@ -188,26 +188,26 @@ class EmployeeSerializer(serializers.ModelSerializer):
             return f"{obj.manager.first_name} {obj.manager.last_name}".strip()
         return None
 
+    # The related managers already exclude soft-deleted rows, and .all() reuses
+    # the view's prefetch_related cache, so these add no per-row queries.
     def get_is_branch_manager(self, obj):
-        return obj.managed_branches.filter(is_deleted=False).exists()
+        return len(obj.managed_branches.all()) > 0
 
     def get_is_department_head(self, obj):
-        return obj.headed_departments.filter(is_deleted=False).exists()
+        return len(obj.headed_departments.all()) > 0
 
     def get_subordinates_count(self, obj):
-        return obj.subordinates.filter(is_deleted=False).count()
+        return len(obj.subordinates.all())
 
     def get_is_manager(self, obj):
         role_name = obj.user.role.role_name if obj.user and obj.user.role else ''
         if role_name in ['Department / Project Manager', 'HR Manager', 'System Admin'] or 'manager' in role_name.lower():
             return True
-        if obj.managed_branches.filter(is_deleted=False).exists():
-            return True
-        if obj.headed_departments.filter(is_deleted=False).exists():
-            return True
-        if obj.subordinates.filter(is_deleted=False).exists():
-            return True
-        return False
+        return (
+            self.get_is_branch_manager(obj)
+            or self.get_is_department_head(obj)
+            or self.get_subordinates_count(obj) > 0
+        )
 
     def validate_manager(self, value):
         if self.instance and value and value.public_id == self.instance.public_id:
